@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, consumeVideoDownload, registerReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -65,6 +65,22 @@ function createBot(token: string): Telegraf {
     const startText = 'text' in ctx.message ? ctx.message.text : '';
     const payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
 
+    if (payload && /^ref_\\d+$/i.test(payload) && ctx.from) {
+      const referrerId = Number(payload.slice(4));
+      try {
+        const referral = await registerReferral(referrerId, ctx.from.id);
+        if (referral.success) {
+          await ctx.reply('🎉 Referral successful! The person who invited you received +1 day of unlimited video access.');
+        }
+      } catch (err) {
+        console.warn('[Referral] Failed:', err instanceof Error ? err.message : String(err));
+      }
+      // Referral payload is not a video code.
+      if (payload.toLowerCase().startsWith('ref_')) {
+        payload = '';
+      }
+    }
+
     if (payload) {
       return deliverVideoToUser(bot, ctx, payload);
     }
@@ -118,6 +134,28 @@ function createBot(token: string): Telegraf {
     return ctx.reply('📝 *Admin Post:* Please enter the JAV code to post (e.g. `ADN-001`):', {
       parse_mode: 'Markdown',
     });
+  });
+
+  bot.command('setplan', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const parts = ctx.message.text.trim().split(/\\s+/);
+    const userId = Number(parts[1]);
+    const plan = parts[2] as 'free' | 'semi_premium' | 'premium';
+    if (!Number.isSafeInteger(userId) || !['free', 'semi_premium', 'premium'].includes(plan)) {
+      return ctx.reply('Usage: /setplan <telegram_user_id> <free|semi_premium|premium>');
+    }
+    const ok = await setUserPlan(userId, plan);
+    return ctx.reply(ok ? `✅ User ${userId} set to ${plan}.` : '❌ User not found.');
+  });
+
+  bot.command('plan', async (ctx) => {
+    if (!ctx.from) return;
+    return sendUserPlan(ctx);
+  });
+
+  bot.command('referral', async (ctx) => {
+    if (!ctx.from) return;
+    return sendReferralInfo(ctx);
   });
 
   // 6. Admin user blocking commands
@@ -250,6 +288,8 @@ function createBot(token: string): Telegraf {
       '📌 <b>Commands</b>',
       '/start — Start the bot',
       '/help — Show this help',
+      '/plan — Show your plan and daily allowance',
+      '/referral — Get your referral link',
       '/settings — Admin panel (admins only)',
       '',
       'If a download is unavailable, try searching the code again later.'
@@ -266,6 +306,7 @@ function createBot(token: string): Telegraf {
       '/settings — Open admin control panel',
       '/post — Add/publish a video',
       '/broadcast — Broadcast a message',
+      '/setplan &lt;user_id&gt; &lt;free|semi_premium|premium&gt; — Set plan',
       '/block &lt;user_id&gt; — Block a user',
       '/unblock &lt;user_id&gt; — Unblock a user',
       '/jobs — View recent index jobs',
@@ -454,8 +495,36 @@ function createBot(token: string): Telegraf {
   // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
     const identifier = ctx.match[1];
+    if (ctx.from && !isAdmin(ctx.from.id)) {
+      try {
+        const allowance = await consumeVideoDownload(ctx.from.id);
+        if (!allowance.allowed) {
+          const planText = allowance.plan === 'semi_premium' ? 'Semi Premium (40/day)' : 'Free (20/day)';
+          await ctx.answerCbQuery('Daily limit reached.', { show_alert: true });
+          return ctx.reply(
+            `🚫 <b>Daily video limit reached</b>\\n\\nYour plan: <b>${planText}</b>\\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
+            { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
+          );
+        }
+      } catch (err) {
+        console.error('[Quota] Failed:', err);
+        return ctx.reply('⚠️ Could not verify your daily download limit. Please try again.');
+      }
+    }
     await ctx.answerCbQuery('Fetching video...');
     return deliverVideoToUser(bot, ctx, identifier);
+  });
+
+  bot.action('user:plan', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return sendUserPlan(ctx);
+  });
+
+  bot.action('user:referral', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return sendReferralInfo(ctx);
   });
 
   // Admin video management callbacks
@@ -1025,6 +1094,31 @@ async function showAdminVideoEditMenu(ctx: any, videoId: string) {
     });
   }
   return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+}
+
+async function sendUserPlan(ctx: any) {
+  if (!ctx.from) return;
+  const user = await getUser(ctx.from.id);
+  if (!user) return ctx.reply('⚠️ Your account is not ready yet. Please send /start again.');
+  const unlimited = user.plan === 'premium' || (user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now());
+  const limit = user.plan === 'semi_premium' ? 40 : 20;
+  const remaining = unlimited ? '∞' : String(Math.max(limit - (user.daily_download_date === new Date().toISOString().slice(0,10) ? user.daily_download_count : 0), 0));
+  const planName = user.plan === 'premium' ? 'Premium' : user.plan === 'semi_premium' ? 'Semi Premium' : 'Free';
+  const reward = user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now()
+    ? `\\n🎁 Referral/bonus unlimited until: <b>${escapeHtml(new Date(user.unlimited_until).toLocaleString())}</b>`
+    : '';
+  return ctx.reply(`📊 <b>Your Plan</b>\\n\\n⭐ Plan: <b>${planName}</b>\\n🎬 Remaining today: <b>${remaining}</b>${reward}\\n\\nFree: 20/day\\nSemi Premium: 40/day\\nPremium: unlimited`, { parse_mode: 'HTML' });
+}
+
+async function sendReferralInfo(ctx: any) {
+  if (!ctx.from) return;
+  const username = await getBotUsername();
+  if (!username) return ctx.reply('⚠️ Referral link is temporarily unavailable.');
+  const link = `https://t.me/${username}?start=ref_${ctx.from.id}`;
+  return ctx.reply(
+    `🔗 <b>Refer & Earn</b>\\n\\nInvite a new user with your personal link. When the referral is successful, you receive <b>1 day of unlimited video access</b>.\\n\\n🎬 Free: 20 videos/day\\n⚡ Semi Premium: 40 videos/day\\n💎 Premium: Unlimited\\n\\n<b>Your referral link:</b>\\n<code>${escapeHtml(link)}</code>`,
+    { parse_mode: 'HTML' }
+  );
 }
 
 function escapeHtml(value: unknown): string {
