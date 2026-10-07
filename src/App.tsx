@@ -21,6 +21,47 @@ interface VideoRecord {
 
 const PAGE_SIZE = 24;
 
+function getThumbnailUrl(rawUrl?: unknown): string {
+  if (typeof rawUrl !== 'string' || !rawUrl.trim()) return '';
+  const trimmed = rawUrl.trim();
+  if (trimmed.startsWith('/api/proxy/image')) return trimmed;
+  return `/api/proxy/image?url=${encodeURIComponent(trimmed)}`;
+}
+
+function VideoThumbnail({
+  src,
+  alt,
+  className,
+  fallbackSize = 10,
+}: {
+  src?: string | null;
+  alt: string;
+  className?: string;
+  fallbackSize?: number;
+}) {
+  const [error, setError] = useState(false);
+  const resolvedUrl = src ? getThumbnailUrl(src) : '';
+
+  if (!resolvedUrl || error) {
+    return (
+      <div className="flex h-full w-full items-center justify-center bg-slate-900 text-slate-700">
+        <Film className={`h-${fallbackSize} w-${fallbackSize}`} />
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={resolvedUrl}
+      alt={alt}
+      loading="lazy"
+      referrerPolicy="no-referrer"
+      onError={() => setError(true)}
+      className={className || 'h-full w-full object-cover'}
+    />
+  );
+}
+
 function CatalogHeader({
   searchInput,
   setSearchInput,
@@ -138,11 +179,7 @@ function VideoDetails({ id }: { id: string }) {
         <main className="mt-7 grid gap-8 md:grid-cols-[320px_1fr]">
           <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
             <div className="aspect-[3/4] bg-slate-900">
-              {thumbnail ? (
-                <img src={thumbnail} alt={video.title || video.code} className="h-full w-full object-cover" />
-              ) : (
-                <div className="flex h-full items-center justify-center"><Film className="h-12 w-12 text-slate-700" /></div>
-              )}
+              <VideoThumbnail src={thumbnail} alt={video.title || video.code} fallbackSize={12} />
             </div>
           </div>
 
@@ -292,7 +329,12 @@ export default function App() {
               return (
                 <a key={video.id} href={'/video/' + encodeURIComponent(video.id)} className="group block overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 transition hover:-translate-y-0.5 hover:border-slate-700">
                   <div className="relative aspect-[3/4] overflow-hidden bg-slate-900">
-                    {thumbnail ? <img src={thumbnail} alt={video.title || video.code} loading="lazy" className="h-full w-full object-cover transition duration-300 group-hover:scale-105" /> : <div className="flex h-full items-center justify-center"><Film className="h-10 w-10 text-slate-700" /></div>}
+                    <VideoThumbnail
+                      src={thumbnail}
+                      alt={video.title || video.code}
+                      className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
+                      fallbackSize={10}
+                    />
                     <div className="absolute left-2 top-2 rounded-md bg-slate-950/85 px-2 py-1 font-mono text-[11px] font-semibold text-indigo-300">{video.code}</div>
                   </div>
                   <div className="p-3">

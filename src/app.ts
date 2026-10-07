@@ -234,6 +234,54 @@ export function createApp(): express.Express {
     }
   });
 
+  // Public image proxy endpoint: bypasses ISP domain filtering and hotlink referer checks
+  app.get('/api/proxy/image', async (req: Request, res: Response) => {
+    try {
+      const rawUrl = req.query.url as string;
+      if (!rawUrl) {
+        return res.status(400).send('Missing url parameter');
+      }
+
+      let parsed: URL;
+      try {
+        parsed = new URL(rawUrl);
+      } catch {
+        return res.status(400).send('Invalid url parameter');
+      }
+
+      if (!/^https?:$/i.test(parsed.protocol)) {
+        return res.status(400).send('Invalid protocol');
+      }
+
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 9000);
+
+      const upstream = await fetch(parsed.toString(), {
+        signal: controller.signal,
+        headers: {
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
+        },
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!upstream.ok) {
+        return res.status(upstream.status).send(`Upstream returned ${upstream.status}`);
+      }
+
+      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
+
+      const arrayBuffer = await upstream.arrayBuffer();
+      res.send(Buffer.from(arrayBuffer));
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      res.status(502).send(`Proxy fetch failed: ${errMsg}`);
+    }
+  });
+
   // Provider Test API: Live scraper runner for any JAV code
   app.post('/api/provider/test', adminOnly, async (req: Request, res: Response) => {
     const start = Date.now();
