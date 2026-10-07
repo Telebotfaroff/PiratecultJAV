@@ -261,7 +261,7 @@ export function createApp(): express.Express {
         return res.status(400).send('Only HTTPS image URLs are allowed');
       }
 
-      const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+      const hostname = parsed.hostname.toLowerCase().replace(/\.$/, '');
       const allowed = ALLOWED_IMAGE_HOSTS.some(
         host => hostname === host || hostname.endsWith('.' + host)
       );
@@ -275,16 +275,13 @@ export function createApp(): express.Express {
         return res.status(400).send('Invalid image URL');
       }
 
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 9000);
-
-      let upstream: Response;
+      let upstream: globalThis.Response | null = null;
       let currentUrl = parsed.toString();
 
       // Follow only a few redirects, validating every destination against the allowlist.
       for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
         const current = new URL(currentUrl);
-        const currentHost = current.hostname.toLowerCase().replace(/\\.$/, '');
+        const currentHost = current.hostname.toLowerCase().replace(/\.$/, '');
         const currentAllowed = ALLOWED_IMAGE_HOSTS.some(
           host => currentHost === host || currentHost.endsWith('.' + host)
         );
@@ -317,8 +314,8 @@ export function createApp(): express.Express {
         currentUrl = new URL(location, current).toString();
       }
 
-      if (!upstream.ok) {
-        return res.status(upstream.status).send(`Upstream returned ${upstream.status}`);
+      if (!upstream || !upstream.ok) {
+        return res.status(upstream?.status || 502).send(`Upstream returned ${upstream?.status || 502}`);
       }
 
       if (upstream.url && upstream.url.includes('now_printing')) {
