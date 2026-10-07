@@ -87,16 +87,27 @@ function CatalogHeader({
   setSearchInput,
   submitSearch,
   clearSearch,
+  onHomeClick,
 }: {
   searchInput: string;
   setSearchInput: (value: string) => void;
   submitSearch: (event: React.FormEvent) => void;
   clearSearch: () => void;
+  onHomeClick?: () => void;
 }) {
   return (
     <header className="sticky top-0 z-40 border-b border-slate-800/80 bg-slate-950/95 backdrop-blur">
       <div className="mx-auto flex max-w-7xl items-center gap-4 px-4 py-4 sm:px-6">
-        <a href="/" className="flex shrink-0 items-center gap-3">
+        <a
+          href="/"
+          onClick={(e) => {
+            if (onHomeClick) {
+              e.preventDefault();
+              onHomeClick();
+            }
+          }}
+          className="flex shrink-0 items-center gap-3"
+        >
           <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600 text-sm font-bold">PJ</div>
           <div className="hidden sm:block">
             <div className="font-semibold">PiratecultJAV</div>
@@ -124,16 +135,26 @@ function CatalogHeader({
   );
 }
 
-function VideoDetails({ id }: { id: string }) {
-  const [video, setVideo] = useState<VideoRecord | null>(null);
+function VideoDetails({
+  id,
+  initialVideo,
+  onBack,
+}: {
+  id: string;
+  initialVideo?: VideoRecord | null;
+  onBack: () => void;
+}) {
+  const [video, setVideo] = useState<VideoRecord | null>(initialVideo || null);
   const [botUrl, setBotUrl] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialVideo);
   const [error, setError] = useState('');
   const [viewMode, setViewMode] = useState<'cover' | 'scene'>('cover');
 
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    if (!initialVideo) {
+      setLoading(true);
+    }
 
     fetch('/api/videos/' + encodeURIComponent(id))
       .then(async response => {
@@ -147,14 +168,16 @@ function VideoDetails({ id }: { id: string }) {
         setBotUrl(data.botUrl || null);
       })
       .catch(err => {
-        if (!cancelled) setError(err instanceof Error ? err.message : 'Unable to load video');
+        if (!cancelled && !initialVideo) {
+          setError(err instanceof Error ? err.message : 'Unable to load video');
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
       });
 
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, initialVideo]);
 
   if (loading) {
     return (
@@ -177,7 +200,14 @@ function VideoDetails({ id }: { id: string }) {
           <Film className="mx-auto mb-4 h-10 w-10 text-slate-600" />
           <h1 className="text-xl font-semibold">Video not found</h1>
           <p className="mt-2 text-sm text-slate-500">{error || 'This indexed post is unavailable.'}</p>
-          <a href="/" className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium hover:bg-indigo-500">
+          <a
+            href="/"
+            onClick={(e) => {
+              e.preventDefault();
+              onBack();
+            }}
+            className="mt-6 inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-medium hover:bg-indigo-500"
+          >
             <ArrowLeft className="h-4 w-4" /> Back to catalog
           </a>
         </div>
@@ -194,7 +224,14 @@ function VideoDetails({ id }: { id: string }) {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10">
-        <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
+        <a
+          href="/"
+          onClick={(e) => {
+            e.preventDefault();
+            onBack();
+          }}
+          className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white"
+        >
           <ArrowLeft className="h-4 w-4" /> Back to catalog
         </a>
 
@@ -286,9 +323,39 @@ function VideoDetails({ id }: { id: string }) {
 }
 
 export default function App() {
-  const detailMatch = window.location.pathname.match(/^\/video\/([^/]+)\/?$/);
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [activeVideo, setActiveVideo] = useState<VideoRecord | null>(null);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = useCallback((path: string, initialVideo?: VideoRecord) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    if (initialVideo) {
+      setActiveVideo(initialVideo);
+    }
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  const detailMatch = currentPath.match(/^\/video\/([^/]+)\/?$/);
   if (detailMatch) {
-    return <VideoDetails id={decodeURIComponent(detailMatch[1])} />;
+    const videoId = decodeURIComponent(detailMatch[1]);
+    const matchedInitial = String(activeVideo?.id) === String(videoId) ? activeVideo : null;
+    return (
+      <VideoDetails
+        id={videoId}
+        initialVideo={matchedInitial}
+        onBack={() => navigate('/')}
+      />
+    );
   }
 
   const [videos, setVideos] = useState<VideoRecord[]>([]);
@@ -347,7 +414,13 @@ export default function App() {
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <CatalogHeader searchInput={searchInput} setSearchInput={setSearchInput} submitSearch={submitSearch} clearSearch={clearSearch} />
+      <CatalogHeader
+        searchInput={searchInput}
+        setSearchInput={setSearchInput}
+        submitSearch={submitSearch}
+        clearSearch={clearSearch}
+        onHomeClick={() => navigate('/')}
+      />
 
       <main className="mx-auto max-w-7xl px-4 py-7 sm:px-6">
         <div className="mb-7">
@@ -379,7 +452,15 @@ export default function App() {
               const hdCover = getHighResCoverUrl(video.code);
               const actresses = video.metadata?.actresses || [];
               return (
-                <a key={video.id} href={'/video/' + encodeURIComponent(video.id)} className="group block overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 transition hover:-translate-y-0.5 hover:border-slate-700">
+                <a
+                  key={video.id}
+                  href={'/video/' + encodeURIComponent(video.id)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    navigate('/video/' + encodeURIComponent(video.id), video);
+                  }}
+                  className="group block overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 transition hover:-translate-y-0.5 hover:border-slate-700"
+                >
                   <div className="relative aspect-video overflow-hidden bg-slate-950">
                     <VideoThumbnail
                       src={thumbnail}
