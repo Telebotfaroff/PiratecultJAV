@@ -1,6 +1,7 @@
 import express, { Request, Response } from 'express';
 import fs from 'fs';
 import path from 'path';
+import crypto from 'crypto';
 import { config, validateConfig } from './config.ts';
 import { checkSupabaseConnection } from './database/supabase.ts';
 import { countVideos, searchVideos } from './services/videos.ts';
@@ -12,9 +13,81 @@ import { getAllSettings, setSetting } from './services/settings.ts';
 import { isBotActive } from './bot/index.ts';
 import { indexerWorker } from './workers/indexer.ts';
 
+const adminSessions = new Map<string, number>();
+
+function getCookie(req: Request, name: string): string | null {
+  const header = req.headers.cookie || '';
+  const item = header.split(';').map(v => v.trim()).find(v => v.startsWith(name + '='));
+  return item ? decodeURIComponent(item.slice(name.length + 1)) : null;
+}
+
+function safeEqual(a: string, b: string): boolean {
+  const aa = Buffer.from(a);
+  const bb = Buffer.from(b);
+  return aa.length === bb.length && crypto.timingSafeEqual(aa, bb);
+}
+
+function adminOnly(req: Request, res: Response, next: express.NextFunction): void {
+  const bearer = req.headers.authorization?.startsWith('Bearer ')
+    ? req.headers.authorization.slice(7)
+    : null;
+  const cookieToken = getCookie(req, 'pc_admin');
+  const sessionToken = bearer || cookieToken;
+
+  if (sessionToken) {
+    const expiresAt = adminSessions.get(sessionToken);
+    if (expiresAt && expiresAt > Date.now()) {
+      adminSessions.set(sessionToken, Date.now() + config.adminSessionTtlMs);
+      return next();
+    }
+    adminSessions.delete(sessionToken);
+  }
+
+  // Direct API-key access is useful for scripts/automation and never gets sent to the browser.
+  const apiKey = req.headers['x-admin-key'];
+  if (typeof apiKey === 'string' && config.adminApiKey && safeEqual(apiKey, config.adminApiKey)) {
+    return next();
+  }
+
+  res.status(401).json({ ok: false, error: 'Admin authentication required' });
+}
+
 export function createApp(): express.Express {
   const app = express();
   app.use(express.json());
+
+  app.post('/api/auth/login', (req: Request, res: Response) => {
+    if (!config.adminApiKey) {
+      return res.status(503).json({ ok: false, error: 'ADMIN_API_KEY is not configured' });
+    }
+
+    const supplied = typeof req.body?.key === 'string' ? req.body.key : '';
+    if (!safeEqual(supplied, config.adminApiKey)) {
+      return res.status(401).json({ ok: false, error: 'Invalid admin key' });
+    }
+
+    const token = crypto.randomBytes(32).toString('hex');
+    adminSessions.set(token, Date.now() + config.adminSessionTtlMs);
+    const secure = process.env.NODE_ENV === 'production' ? '; Secure' : '';
+    res.setHeader(
+      'Set-Cookie',
+      `pc_admin=${encodeURIComponent(token)}; HttpOnly; Path=/; SameSite=Lax; Max-Age=${Math.floor(config.adminSessionTtlMs / 1000)}${secure}`
+    );
+    return res.json({ ok: true });
+  });
+
+  app.post('/api/auth/logout', adminOnly, (req: Request, res: Response) => {
+    const token = getCookie(req, 'pc_admin');
+    if (token) adminSessions.delete(token);
+    res.setHeader('Set-Cookie', 'pc_admin=; HttpOnly; Path=/; SameSite=Lax; Max-Age=0');
+    return res.json({ ok: true });
+  });
+
+  app.get('/api/auth/status', (req: Request, res: Response) => {
+    const token = getCookie(req, 'pc_admin');
+    const expiresAt = token ? adminSessions.get(token) : undefined;
+    return res.json({ ok: true, authenticated: Boolean(expiresAt && expiresAt > Date.now()) });
+  });
 
   // Non-negotiable requirement: /health endpoint
   app.get('/health', (_req: Request, res: Response) => {
@@ -67,7 +140,7 @@ export function createApp(): express.Express {
   });
 
   // Jobs API: List jobs
-  app.get('/api/jobs', async (req: Request, res: Response) => {
+  app.get('/api/jobs', adminOnly, async (req: Request, res: Response) => {
     try {
       const statusFilter = (req.query.status as string) || undefined;
       const limit = parseInt((req.query.limit as string) || '50', 10);
@@ -80,7 +153,7 @@ export function createApp(): express.Express {
   });
 
   // Jobs API: Create a manual or test job
-  app.post('/api/jobs/create', async (req: Request, res: Response) => {
+  app.post('/api/jobs/create', adminOnly, async (req: Request, res: Response) => {
     try {
       const { code, dumpChatId, videoMessageId } = req.body;
       if (!code) {
@@ -109,7 +182,7 @@ export function createApp(): express.Express {
   });
 
   // Jobs API: Retry job
-  app.post('/api/jobs/retry/:id', async (req: Request, res: Response) => {
+  app.post('/api/jobs/retry/:id', adminOnly, async (req: Request, res: Response) => {
     try {
       const jobId = parseInt(req.params.id, 10);
       const job = await retryJob(jobId);
@@ -136,7 +209,7 @@ export function createApp(): express.Express {
   });
 
   // Provider Test API: Live scraper runner for any JAV code
-  app.post('/api/provider/test', async (req: Request, res: Response) => {
+  app.post('/api/provider/test', adminOnly, async (req: Request, res: Response) => {
     const start = Date.now();
     try {
       const { code } = req.body;
@@ -169,7 +242,7 @@ export function createApp(): express.Express {
   });
 
   // Simulator API: Simulates a Telegram Dump Channel post
-  app.post('/api/simulator/dump-post', async (req: Request, res: Response) => {
+  app.post('/api/simulator/dump-post', adminOnly, async (req: Request, res: Response) => {
     try {
       const { caption, messageId, dumpChatId } = req.body;
       if (!caption) {
@@ -211,7 +284,7 @@ export function createApp(): express.Express {
   });
 
   // Settings API
-  app.get('/api/settings', async (_req: Request, res: Response) => {
+  app.get('/api/settings', adminOnly, async (_req: Request, res: Response) => {
     try {
       const settings = await getAllSettings();
       res.json({ ok: true, settings });
@@ -220,7 +293,7 @@ export function createApp(): express.Express {
     }
   });
 
-  app.post('/api/settings', async (req: Request, res: Response) => {
+  app.post('/api/settings', adminOnly, async (req: Request, res: Response) => {
     try {
       const { key, value } = req.body;
       if (!key) return res.status(400).json({ ok: false, error: 'key is required' });
@@ -232,7 +305,7 @@ export function createApp(): express.Express {
   });
 
   // Schema SQL API
-  app.get('/api/schema/sql', (_req: Request, res: Response) => {
+  app.get('/api/schema/sql', adminOnly, (_req: Request, res: Response) => {
     try {
       const sqlPath = path.resolve(process.cwd(), 'supabase/migrations/001_initial_schema.sql');
       if (fs.existsSync(sqlPath)) {
