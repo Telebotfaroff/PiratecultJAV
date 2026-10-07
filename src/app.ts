@@ -6,11 +6,11 @@ import { config, validateConfig } from './config.ts';
 import { checkSupabaseConnection } from './database/supabase.ts';
 import { countVideos, searchVideos } from './services/videos.ts';
 import { countJobs, createIndexJob, getRecentJobs, retryJob } from './services/indexJobs.ts';
-import { countUsers } from './services/users.ts';
+import { countUsers, getBroadcastUserIds } from './services/users.ts';
 import { javtifulProvider } from './providers/javtiful/index.ts';
 import { extractCodes, normalizeCode } from './services/code.ts';
 import { getAllSettings, setSetting } from './services/settings.ts';
-import { isBotActive } from './bot/index.ts';
+import { isBotActive, getBot } from './bot/index.ts';
 import { indexerWorker } from './workers/indexer.ts';
 
 const adminSessions = new Map<string, number>();
@@ -280,6 +280,41 @@ export function createApp(): express.Express {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ ok: false, error: errMsg });
+    }
+  });
+
+  // Admin broadcast API
+  app.post('/api/broadcast', adminOnly, async (req: Request, res: Response) => {
+    try {
+      const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
+      if (!message) return res.status(400).json({ ok: false, error: 'message is required' });
+      if (message.length > 4096) return res.status(400).json({ ok: false, error: 'message exceeds Telegram 4096-character limit' });
+
+      const bot = getBot();
+      if (!bot) return res.status(503).json({ ok: false, error: 'Telegram bot is not active' });
+
+      const userIds = await getBroadcastUserIds();
+      let sent = 0;
+      let failed = 0;
+      const failures: number[] = [];
+
+      for (let i = 0; i < userIds.length; i += 25) {
+        const batch = userIds.slice(i, i + 25);
+        await Promise.all(batch.map(async (userId) => {
+          try {
+            await bot.telegram.sendMessage(userId, message);
+            sent++;
+          } catch {
+            failed++;
+            if (failures.length < 50) failures.push(userId);
+          }
+        }));
+        if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
+      }
+
+      res.json({ ok: true, total: userIds.length, sent, failed, failures });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
     }
   });
 
