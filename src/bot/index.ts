@@ -14,30 +14,58 @@ import { classifyTelegramError, withTelegramRetry } from '../services/telegramEr
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
+let activeBotRole: 'primary' | 'backup' = config.activeBot;
 
-export function getBot(): Telegraf | null {
-  if (botInstance) return botInstance;
+function tokenForRole(role: 'primary' | 'backup'): string {
+  return role === 'backup' ? config.backupBotToken : config.botToken;
+}
 
-  if (!config.botToken) {
-    return null;
-  }
+function availableRole(preferred: 'primary' | 'backup'): 'primary' | 'backup' | null {
+  if (tokenForRole(preferred)) return preferred;
+  const fallback = preferred === 'primary' ? 'backup' : 'primary';
+  return tokenForRole(fallback) ? fallback : null;
+}
 
-  const bot = new Telegraf(config.botToken);
+function createBot(token: string): Telegraf {
+  const bot = new Telegraf(token);
 
   // Automatically delete bot-created messages according to the admin-configured timer.
   // Dump-channel storage messages are excluded so indexed videos remain available.
   installMessageDeleteTimer(bot);
 
-  // Global error handler to catch and report errors gracefully
   bot.catch((err: unknown, ctx) => {
     const info = classifyTelegramError(err);
     console.error(`[TelegramBot] ${info.kind} on update #${ctx?.update?.update_id || 'unknown'}:`, info.message);
-    // Do not send another Telegram request when the original failure is itself a Telegram error.
     if (info.kind === 'blocked' || info.kind === 'not_found' || info.kind === 'invalid_chat') return;
     try {
       void ctx.reply('⚠️ Telegram request failed. Please try again.').catch(() => {});
     } catch { /* ignore secondary reply failures */ }
   });
+
+  return bot;
+}
+
+export function getActiveBotRole(): 'primary' | 'backup' {
+  return activeBotRole;
+}
+
+export function getBotUsername(): string | null {
+  return null;
+}
+
+export function getBot(): Telegraf | null {
+  if (botInstance) return botInstance;
+
+  const role = availableRole(activeBotRole);
+  if (!role) return null;
+  activeBotRole = role;
+
+  const token = tokenForRole(role);
+  const bot = createBot(token);
+  botInstance = bot;
+
+  return bot;
+}
 
   // 1. User tracking & blocked filter middleware
   bot.use(async (ctx, next) => {
@@ -276,6 +304,44 @@ export function getBot(): Telegraf | null {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]),
     });
+  });
+
+  bot.action('settings:recovery', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const primary = Boolean(config.botToken);
+    const backup = Boolean(config.backupBotToken);
+    const active = activeBotRole === 'primary' ? 'PRIMARY' : 'BACKUP';
+    return ctx.editMessageText(
+      '🔄 *Bot Recovery*\\n\\n' +
+      '🟢 Active: *' + active + '*\\n' +
+      'Primary token: *' + (primary ? 'configured' : 'missing') + '*\\n' +
+      'Backup token: *' + (backup ? 'configured' : 'missing') + '*\\n\\n' +
+      'The backup bot must be added to the same dump and force-sub channels with the required permissions.',
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🟢 Use Primary', 'settings:recovery:primary')],
+          [Markup.button.callback('🟢 Use Backup', 'settings:recovery:backup')],
+          [Markup.button.callback('⬅️ Back', 'settings:main')],
+        ]),
+      }
+    );
+  });
+
+  bot.action(/^settings:recovery:(primary|backup)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const role = ctx.match[1] as 'primary' | 'backup';
+    if (!tokenForRole(role)) return ctx.answerCbQuery(`${role === 'primary' ? 'Primary' : 'Backup'} token is not configured.`);
+    await ctx.answerCbQuery('Switching bot...');
+    stopBotPolling();
+    botInstance = null;
+    activeBotRole = role;
+    const started = await startBotPolling();
+    if (!started) {
+      return ctx.reply('❌ Could not start the selected bot. Check its token and Telegram channel permissions.');
+    }
+    return showAdminSettings(ctx);
   });
 
   bot.action('settings:close', async (ctx) => {
@@ -578,7 +644,7 @@ async function showAdminSettings(ctx: any) {
     '⚙️ *PIRATECULTJAV ADMIN*', '',
     '👥 Users: *' + users + '*',
     '🎬 Videos: *' + videos + '*',
-    '🟢 Bot: *Online*', '',
+    '🟢 Bot: *Online* (' + activeBotRole.toUpperCase() + ')', '',
     '🗑️ Auto Delete: *' + formatTimer(deleteTimer) + '*',
     '🔒 Force Sub: *' + (forceSub ? 'ON' : 'OFF') + '*',
     '🛠️ Maintenance: *' + (maintenance ? 'ON' : 'OFF') + '*', '',
@@ -588,6 +654,7 @@ async function showAdminSettings(ctx: any) {
     [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
     [Markup.button.callback('🔒 Force Sub', 'settings:forcesub'), Markup.button.callback('🛠️ Maintenance', 'settings:maintenance')],
     [Markup.button.callback('📊 Statistics', 'settings:stats'), Markup.button.callback('🔧 System', 'settings:system')],
+    [Markup.button.callback('🔄 Bot Recovery', 'settings:recovery')],
     [Markup.button.callback('❌ Close', 'settings:close')],
   ]);
   if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
@@ -605,32 +672,70 @@ function formatTimer(seconds: number): string {
  * Starts Telegram bot polling safely ensuring only one instance runs.
  */
 export async function startBotPolling(): Promise<boolean> {
-  const bot = getBot();
-  if (!bot) {
-    console.log('[TelegramBot] BOT_TOKEN not set. Polling not started.');
-    return false;
-  }
-
   if (isPollingActive) {
     console.log('[TelegramBot] Polling already active.');
     return true;
   }
 
+  let role = availableRole(activeBotRole);
+  if (!role) {
+    console.log('[TelegramBot] No bot token configured. Polling not started.');
+    return false;
+  }
+
+  // Validate the selected token before polling. If the primary bot was deleted/revoked,
+  // automatically recover with the backup bot without touching Supabase or dump messages.
+  const validateAndBuild = async (candidate: 'primary' | 'backup'): Promise<Telegraf | null> => {
+    const token = tokenForRole(candidate);
+    if (!token) return null;
+    const candidateBot = createBot(token);
+    try {
+      const me = await candidateBot.telegram.getMe();
+      console.log(`[TelegramBot] ${candidate.toUpperCase()} bot validated: @${me.username || me.id}`);
+
+      // Verify the replacement bot can access the persistent dump channel.
+      if (config.dumpChatId) {
+        await candidateBot.telegram.getChat(config.dumpChatId);
+        await candidateBot.telegram.getChatMember(config.dumpChatId, me.id);
+      }
+      return candidateBot;
+    } catch (err: unknown) {
+      const info = classifyTelegramError(err);
+      console.error(`[TelegramBot] ${candidate.toUpperCase()} validation failed: ${info.message}`);
+      return null;
+    }
+  };
+
+  let bot = await validateAndBuild(role);
+  if (!bot) {
+    const fallback = role === 'primary' ? 'backup' : 'primary';
+    if (!tokenForRole(fallback)) return false;
+    console.warn(`[TelegramBot] Falling back from ${role} to ${fallback} bot.`);
+    role = fallback;
+    bot = await validateAndBuild(role);
+  }
+
+  if (!bot) {
+    console.error('[TelegramBot] No configured bot could be validated. Polling not started.');
+    return false;
+  }
+
+  activeBotRole = role;
+  botInstance = bot;
+
   try {
-    console.log('[TelegramBot] Launching bot polling...');
-    bot.launch({
-      dropPendingUpdates: true,
-    }).catch(err => {
-      console.error('[TelegramBot] Polling error:', err.message);
+    console.log(`[TelegramBot] Launching ${role} bot polling...`);
+    bot.launch({ dropPendingUpdates: true }).catch(err => {
+      console.error('[TelegramBot] Polling error:', err?.message || err);
       isPollingActive = false;
     });
-
     isPollingActive = true;
-    console.log('[TelegramBot] Bot polling started successfully.');
+    console.log(`[TelegramBot] ${role.toUpperCase()} bot polling started successfully.`);
     return true;
   } catch (err: unknown) {
     console.error('[TelegramBot] Failed to launch bot:', err);
     isPollingActive = false;
+    botInstance = null;
     return false;
   }
 }
