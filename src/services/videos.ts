@@ -131,3 +131,55 @@ export async function countVideos(): Promise<number> {
   if (error) return 0;
   return count || 0;
 }
+
+
+export async function updateVideoMetadata(
+  id: string,
+  updates: {
+    title?: string;
+    description?: string | null;
+    duration?: string | null;
+    date?: string | null;
+    actresses?: string[];
+    studio?: string | null;
+    genres?: string[];
+  }
+): Promise<VideoRecord> {
+  const supabase = getSupabase();
+  const current = await getVideoById(id);
+  if (!current) throw new Error('Video record not found.');
+
+  const currentMetadata = current.metadata || {};
+  const nextMetadata = {
+    ...currentMetadata,
+    ...(updates.duration !== undefined ? { duration: updates.duration } : {}),
+    ...(updates.date !== undefined ? { date: updates.date } : {}),
+    ...(updates.actresses !== undefined ? { actresses: updates.actresses } : {}),
+    ...(updates.studio !== undefined ? { studio: updates.studio } : {}),
+    ...(updates.genres !== undefined ? { genres: updates.genres } : {}),
+  };
+
+  const payload: Record<string, unknown> = {
+    metadata: nextMetadata,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (updates.title !== undefined) payload.title = updates.title;
+  if (updates.description !== undefined) payload.description = updates.description;
+
+  const { data, error } = await supabase
+    .from('videos')
+    .update(payload)
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error('Database error updating video: ' + error.message);
+  return data as VideoRecord;
+}
+
+export async function deleteVideo(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.from('videos').delete().eq('id', id);
+  if (error) throw new Error('Database error deleting video: ' + error.message);
+}
