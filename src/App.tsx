@@ -131,7 +131,7 @@ interface ProviderTestResult {
   error?: string;
 }
 
-type TabType = 'overview' | 'queue' | 'provider' | 'simulator' | 'catalog' | 'force-sub' | 'schema';
+type TabType = 'overview' | 'queue' | 'provider' | 'simulator' | 'catalog' | 'force-sub' | 'broadcast' | 'schema';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -195,6 +195,11 @@ export default function App() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogTotal, setCatalogTotal] = useState(0);
+
+  // Broadcast state
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [broadcastLoading, setBroadcastLoading] = useState(false);
+  const [broadcastResult, setBroadcastResult] = useState<any>(null);
 
   // Force-sub state
   const [forceSubChannels, setForceSubChannels] = useState<ForceSubChannel[]>([]);
@@ -380,6 +385,28 @@ export default function App() {
     }
   };
 
+  const sendBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastMessage.trim()) return;
+    if (!window.confirm('Send this message to all non-blocked users?')) return;
+    setBroadcastLoading(true);
+    setBroadcastResult(null);
+    try {
+      const res = await apiFetch('/api/broadcast', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: broadcastMessage.trim() }),
+      });
+      const data = await res.json();
+      setBroadcastResult(data);
+      if (res.ok) setBroadcastMessage('');
+    } catch (err: unknown) {
+      setBroadcastResult({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    } finally {
+      setBroadcastLoading(false);
+    }
+  };
+
   const saveForceSubChannel = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!forceSubForm.channelId.trim() || !forceSubForm.title.trim()) return;
@@ -526,6 +553,14 @@ export default function App() {
             }`}
           >
             Video Catalog
+          </button>
+          <button
+            onClick={() => setActiveTab('broadcast')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'broadcast' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <Send className="h-3.5 w-3.5" /> Broadcast
           </button>
           <button
             onClick={() => setActiveTab('force-sub')}
@@ -1369,6 +1404,29 @@ export default function App() {
                     </div>
                   </div>
                 ))}
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* TAB: BROADCAST */}
+        {activeTab === 'broadcast' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <h2 className="text-base font-semibold text-slate-100">Broadcast Message</h2>
+              <p className="text-xs text-slate-400 mt-1">Send a plain-text message to every non-blocked user currently stored in the database.</p>
+              <form onSubmit={sendBroadcast} className="mt-5 space-y-4">
+                <textarea value={broadcastMessage} onChange={e => setBroadcastMessage(e.target.value)} maxLength={4096} rows={8} placeholder="Write your broadcast message..." className="w-full bg-slate-950 border border-slate-800 rounded-xl p-4 text-sm text-slate-100 placeholder:text-slate-600 focus:outline-none focus:border-indigo-500 resize-y" />
+                <div className="flex items-center justify-between text-[11px] text-slate-500"><span>Telegram limit: 4096 characters</span><span>{broadcastMessage.length}/4096</span></div>
+                <button type="submit" disabled={broadcastLoading || !broadcastMessage.trim()} className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-sm font-medium flex items-center gap-2">
+                  {broadcastLoading ? <><RefreshCw className="h-4 w-4 animate-spin" /> Broadcasting...</> : <><Send className="h-4 w-4" /> Send to All Users</>}
+                </button>
+              </form>
+            </div>
+            {broadcastResult && (
+              <div className={`bg-slate-900 border rounded-xl p-5 ${broadcastResult.ok ? 'border-emerald-500/20' : 'border-rose-500/20'}`}>
+                <div className="font-semibold text-sm">{broadcastResult.ok ? 'Broadcast complete' : 'Broadcast failed'}</div>
+                {broadcastResult.ok ? <div className="grid grid-cols-3 gap-3 mt-4 text-center"><div><div className="text-xl font-mono">{broadcastResult.total}</div><div className="text-[11px] text-slate-500">Recipients</div></div><div><div className="text-xl font-mono text-emerald-400">{broadcastResult.sent}</div><div className="text-[11px] text-slate-500">Sent</div></div><div><div className="text-xl font-mono text-rose-400">{broadcastResult.failed}</div><div className="text-[11px] text-slate-500">Failed</div></div></div> : <p className="text-xs text-rose-300 mt-2">{broadcastResult.error}</p>}
               </div>
             )}
           </div>
