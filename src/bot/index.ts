@@ -159,18 +159,16 @@ export function getBot(): Telegraf | null {
     return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
   });
 
-  // Admin settings menu
+  // Admin command center
   bot.command('settings', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    return showAdminSettings(ctx);
+  });
 
-    const seconds = await getSetting<number>('delete_timer_seconds', 0);
-    return ctx.reply('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
-        [Markup.button.callback('❌ Close', 'settings:close')],
-      ]),
-    });
+  bot.action('settings:main', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return showAdminSettings(ctx);
   });
 
   bot.action('settings:delete_timer', async (ctx) => {
@@ -190,64 +188,91 @@ export function getBot(): Telegraf | null {
     });
   });
 
-  bot.action(/^settings:timer:(\\d+)$/, async (ctx) => {
+  bot.action(/^settings:timer:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const seconds = Number.parseInt(ctx.match[1], 10);
     await setSetting('delete_timer_seconds', seconds);
     await ctx.answerCbQuery(seconds > 0 ? 'Timer updated.' : 'Timer disabled.');
-    return ctx.editMessageText('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
+    return showAdminSettings(ctx);
+  });
+
+  bot.action('settings:broadcast', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.editMessageText('📣 *Broadcast*\n\nUse the web dashboard for the full broadcast composer, or use /broadcast followed by your message.', {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]),
+    });
+  });
+
+  bot.action('settings:forcesub', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const enabled = await getSetting<boolean>('force_sub_enabled', false);
+    return ctx.editMessageText('🔒 *Force Subscribe*\n\nStatus: *' + (enabled ? 'ENABLED' : 'DISABLED') + '*\n\nUse the web dashboard to manage channels and request mode.', {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
-        [Markup.button.callback('❌ Close', 'settings:close')],
+        [Markup.button.callback(enabled ? '🔴 Disable' : '🟢 Enable', 'settings:forcesub:toggle')],
+        [Markup.button.callback('⬅️ Back', 'settings:main')],
       ]),
     });
   });
 
-  bot.action('settings:main', async (ctx) => {
+  bot.action('settings:forcesub:toggle', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const current = await getSetting<boolean>('force_sub_enabled', false);
+    await setSetting('force_sub_enabled', !current);
+    await ctx.answerCbQuery(!current ? 'Force-sub enabled.' : 'Force-sub disabled.');
+    return showAdminSettings(ctx);
+  });
+
+  bot.action('settings:maintenance', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
-    const seconds = await getSetting<number>('delete_timer_seconds', 0);
-    return ctx.editMessageText('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
+    const enabled = await getSetting<boolean>('maintenance_mode', false);
+    return ctx.editMessageText('🛠️ *Maintenance Mode*\n\nStatus: *' + (enabled ? 'ENABLED' : 'DISABLED') + '*', {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
-        [Markup.button.callback('❌ Close', 'settings:close')],
+        [Markup.button.callback(enabled ? '🟢 Turn Off' : '🔴 Turn On', 'settings:maintenance:toggle')],
+        [Markup.button.callback('⬅️ Back', 'settings:main')],
       ]),
+    });
+  });
+
+  bot.action('settings:maintenance:toggle', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const current = await getSetting<boolean>('maintenance_mode', false);
+    await setSetting('maintenance_mode', !current);
+    await ctx.answerCbQuery(!current ? 'Maintenance mode enabled.' : 'Maintenance mode disabled.');
+    return showAdminSettings(ctx);
+  });
+
+  bot.action('settings:stats', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const [userCount, videoCount, jobs] = await Promise.all([countUsers(), countVideos(), countJobs()]);
+    return ctx.editMessageText('📊 *Statistics*\n\n👥 Users: *' + userCount + '*\n🎬 Videos: *' + videoCount + '*\n\n⚙️ Jobs\n• Queued: ' + jobs.queued + '\n• Processing: ' + jobs.processing + '\n• Completed: ' + jobs.completed + '\n• Failed: ' + jobs.failed + '\n• Total: ' + jobs.total, {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'settings:stats')], [Markup.button.callback('⬅️ Back', 'settings:main')]]),
+    });
+  });
+
+  bot.action('settings:system', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const deleteTimer = await getSetting<number>('delete_timer_seconds', 0);
+    const forceSub = await getSetting<boolean>('force_sub_enabled', false);
+    const maintenance = await getSetting<boolean>('maintenance_mode', false);
+    return ctx.editMessageText('🔧 *System Settings*\n\n🗑️ Delete timer: ' + formatTimer(deleteTimer) + '\n🔒 Force-sub: ' + (forceSub ? 'ON' : 'OFF') + '\n🛠️ Maintenance: ' + (maintenance ? 'ON' : 'OFF'), {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]),
     });
   });
 
   bot.action('settings:close', async (ctx) => {
-    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     return ctx.deleteMessage().catch(() => undefined);
-  });
-
-  // 7. Admin auto-delete timer
-  bot.command('deletetimer', async (ctx) => {
-    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-
-    const arg = ctx.message.text.replace(/^\/deletetimer\s*/i, '').trim().toLowerCase();
-    const current = await getSetting<number>('delete_timer_seconds', 0);
-
-    if (!arg) {
-      return ctx.reply(current > 0
-        ? '🗑️ Auto-delete timer: ' + current + ' seconds.\nUse /deletetimer <seconds> to change it or /deletetimer off to disable.'
-        : '🗑️ Auto-delete timer is OFF.\nUse /deletetimer <seconds> to enable it.');
-    }
-
-    if (arg === 'off' || arg === '0' || arg === 'disable') {
-      await setSetting('delete_timer_seconds', 0);
-      return ctx.reply('✅ Auto-delete timer disabled.');
-    }
-
-    const seconds = Number.parseInt(arg, 10);
-    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 86400) {
-      return ctx.reply('Usage: /deletetimer <seconds>\nExample: /deletetimer 60\nRange: 1–86400 seconds, or use /deletetimer off.');
-    }
-
-    await setSetting('delete_timer_seconds', seconds);
-    return ctx.reply('✅ Auto-delete timer set to ' + seconds + ' seconds.');
   });
   // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
@@ -533,6 +558,32 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   }
 }
 
+async function showAdminSettings(ctx: any) {
+  const [users, videos, jobs, deleteTimer, forceSub, maintenance] = await Promise.all([
+    countUsers(), countVideos(), countJobs(),
+    getSetting<number>('delete_timer_seconds', 0),
+    getSetting<boolean>('force_sub_enabled', false),
+    getSetting<boolean>('maintenance_mode', false),
+  ]);
+  const text = [
+    '⚙️ *PIRATECULTJAV ADMIN*', '',
+    '👥 Users: *' + users + '*',
+    '🎬 Videos: *' + videos + '*',
+    '🟢 Bot: *Online*', '',
+    '🗑️ Auto Delete: *' + formatTimer(deleteTimer) + '*',
+    '🔒 Force Sub: *' + (forceSub ? 'ON' : 'OFF') + '*',
+    '🛠️ Maintenance: *' + (maintenance ? 'ON' : 'OFF') + '*', '',
+    '⚙️ Jobs: *' + jobs.queued + ' queued*',
+  ].join('\n');
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
+    [Markup.button.callback('🔒 Force Sub', 'settings:forcesub'), Markup.button.callback('🛠️ Maintenance', 'settings:maintenance')],
+    [Markup.button.callback('📊 Statistics', 'settings:stats'), Markup.button.callback('🔧 System', 'settings:system')],
+    [Markup.button.callback('❌ Close', 'settings:close')],
+  ]);
+  if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
+  return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+}
 function formatTimer(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return 'OFF';
   if (seconds % 86400 === 0) return seconds / 86400 + ' day(s)';
