@@ -266,10 +266,10 @@ export default function App() {
 
   useEffect(() => {
     fetchStatus();
-    fetchSchema();
+    if (authenticated) fetchSchema();
     const interval = setInterval(fetchStatus, 8000);
     return () => clearInterval(interval);
-  }, [fetchStatus, fetchSchema]);
+  }, [fetchStatus, fetchSchema, authenticated]);
 
   useEffect(() => {
     if (activeTab === 'queue') {
