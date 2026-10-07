@@ -234,6 +234,54 @@ function createBot(token: string): Telegraf {
     catch (err: unknown) { return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err))); }
   });
 
+  bot.command('help', async (ctx) => {
+    const admin = Boolean(ctx.from && isAdmin(ctx.from.id));
+    const userHelp = [
+      '🤖 <b>PiratecultJAV Bot Help</b>',
+      '',
+      '🔎 <b>Search</b>',
+      'Send a JAV code or keyword, for example:',
+      '<code>ROE-324</code>',
+      '<code>ABW-004</code>',
+      '',
+      '🎬 Tap <b>Get</b> on a result to receive the video.',
+      '🔗 You can also open a direct bot link with the video code.',
+      '',
+      '📌 <b>Commands</b>',
+      '/start — Start the bot',
+      '/help — Show this help',
+      '/settings — Admin panel (admins only)',
+      '',
+      'If a download is unavailable, try searching the code again later.'
+    ].join('\\n');
+
+    if (!admin) return ctx.reply(userHelp, { parse_mode: 'HTML' });
+
+    const adminHelp = [
+      userHelp,
+      '',
+      '━━━━━━━━━━━━━━━━',
+      '👑 <b>ADMIN COMMANDS</b>',
+      '',
+      '/settings — Open admin control panel',
+      '/post — Add/publish a video',
+      '/broadcast — Broadcast a message',
+      '/block &lt;user_id&gt; — Block a user',
+      '/unblock &lt;user_id&gt; — Unblock a user',
+      '/jobs — View recent index jobs',
+      '/retryjob &lt;job_id&gt; — Retry an index job',
+      '/test &lt;code&gt; — Test Javtiful metadata',
+      '/addfs &lt;channel_id&gt; | &lt;title&gt; | &lt;invite_link&gt; | request:true — Add force-sub channel',
+      '/removefs &lt;record_id&gt; — Remove force-sub channel',
+      '',
+      '⚙️ <b>Admin panel</b> also provides video search/edit/delete, metadata refresh, status control, force-sub management, broadcast, statistics, maintenance, delete timer and bot recovery.',
+      '',
+      '🔐 Only Telegram IDs listed in <code>ADMIN_IDS</code> can use admin functions.'
+    ].join('\\n');
+
+    return ctx.reply(adminHelp, { parse_mode: 'HTML' });
+  });
+
   // Admin command center
   bot.command('settings', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
