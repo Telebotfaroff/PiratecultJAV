@@ -178,6 +178,7 @@ export async function retryJob(jobId: number): Promise<IndexJob> {
     .update({
       status: 'queued',
       error: null,
+      next_attempt_at: null,
       updated_at: new Date().toISOString(),
     })
     .eq('id', jobId)
