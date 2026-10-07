@@ -87,3 +87,14 @@ export async function countUsers(): Promise<number> {
     return 0;
   }
 }
+
+
+export async function getBroadcastUserIds(): Promise<number[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('users')
+    .select('telegram_user_id')
+    .eq('is_blocked', false);
+  if (error) throw new Error(`Failed loading broadcast recipients: ${error.message}`);
+  return (data || []).map(row => Number(row.telegram_user_id)).filter(Number.isFinite);
+}
