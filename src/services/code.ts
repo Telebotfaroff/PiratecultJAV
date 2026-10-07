@@ -62,3 +62,34 @@ export function extractCodes(text: string): string[] {
 export function isValidCode(code: string): boolean {
   return normalizeCode(code) !== null;
 }
+
+export function cleanActressList(rawActresses?: unknown): string[] {
+  if (!Array.isArray(rawActresses)) return [];
+  const invalidPatterns = [
+    /\b(FHD|HD|SD|4K|2K|720p|1080p|Reducing|Mosaic)\b/i,
+    /\d{1,2}:\d{2}(:\d{2})?/, // Durations like 01:42:17
+    /\b[A-Z]{2,6}-\d{2,5}\b/i, // Codes like ROE-324, VEC-732
+    /\b(slave|trip|pregnant|friend|wife|mother|creampie|stepson|girlfriend|sister|match)\b/i,
+  ];
+
+  const cleaned: string[] = [];
+  for (const item of rawActresses) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed || trimmed.length > 40 || trimmed.length < 2) continue;
+    if (invalidPatterns.some(pat => pat.test(trimmed))) continue;
+    if (!cleaned.includes(trimmed)) {
+      cleaned.push(trimmed);
+    }
+  }
+  return cleaned;
+}
+
+export function cleanTitle(title: string, code: string): string {
+  if (!title) return code;
+  let clean = title.trim();
+  const escapedCode = code.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+  clean = clean.replace(new RegExp(`^${escapedCode}\\s*[-:—]?\\s*`, 'i'), '').trim();
+  return clean || title;
+}
+

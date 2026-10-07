@@ -1,6 +1,6 @@
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
-import { normalizeCode, extractCodes } from '../services/code.ts';
+import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos } from '../services/videos.ts';
 import { createIndexJob, countJobs } from '../services/indexJobs.ts';
 import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
@@ -631,6 +631,14 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
   }
 }
 
+function escapeHtml(value: unknown): string {
+  if (value === null || value === undefined) return '';
+  return String(value)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+}
+
 async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   const pageSize = 5;
   const offset = page * pageSize;
@@ -639,31 +647,60 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
     const { videos, total } = await searchVideos(rawQuery, pageSize, offset);
 
     if (videos.length === 0) {
-      return ctx.reply(`No videos found for "${rawQuery}". Try another code or keyword.`);
+      const msg = `❌ No videos found matching <b>${escapeHtml(rawQuery)}</b>.\n\n💡 <i>Try searching with a code (e.g. <code>ADN-001</code>, <code>ROYD-312</code>) or keyword.</i>`;
+      if (ctx.callbackQuery) {
+        return ctx.editMessageText(msg, { parse_mode: 'HTML' }).catch(() => ctx.reply(msg, { parse_mode: 'HTML' }));
+      }
+      return ctx.reply(msg, { parse_mode: 'HTML' });
     }
 
     const totalPages = Math.ceil(total / pageSize);
 
-    // Format list of results
-    let text = `🔍 *Search Results for* \`${rawQuery}\` (${total} found - Page ${page + 1}/${totalPages}):\n\n`;
+    let html = `🔍 <b>Search Results for:</b> <code>${escapeHtml(rawQuery)}</code>\n`;
+    html += `📊 <b>Found:</b> ${total} video${total === 1 ? '' : 's'} · <b>Page:</b> ${page + 1}/${totalPages}\n`;
+    html += `─────────────────────────\n\n`;
 
     const keyboardButtons: any[] = [];
 
     videos.forEach((v, idx) => {
-      const actresses = Array.isArray(v.metadata?.actresses) ? v.metadata.actresses.join(', ') : '';
-      text += `*${offset + idx + 1}.* \`${v.code}\` — ${v.title.slice(0, 50)}${v.title.length > 50 ? '...' : ''}\n`;
-      if (actresses) {
-        text += `   _Actresses: ${actresses.slice(0, 40)}_\n`;
-      }
-      text += `\n`;
+      const num = offset + idx + 1;
+      const displayTitle = cleanTitle(v.title, v.code);
+      const truncatedTitle = displayTitle.length > 70 ? displayTitle.slice(0, 67) + '...' : displayTitle;
+      const actresses = cleanActressList(v.metadata?.actresses);
 
-      keyboardButtons.push([Markup.button.callback(`📥 Download ${v.code}`, `download:${v.id}`)]);
+      html += `<b>${num}.</b> 🏷️ <code>${escapeHtml(v.code)}</code>\n`;
+      html += `📌 <i>${escapeHtml(truncatedTitle)}</i>\n`;
+
+      if (actresses.length > 0) {
+        html += `💃 <b>Cast:</b> ${escapeHtml(actresses.join(', '))}\n`;
+      }
+
+      const metaParts: string[] = [];
+      if (v.metadata?.duration) {
+        metaParts.push(`⏱ ${escapeHtml(v.metadata.duration)}`);
+      }
+      if (v.metadata?.studio) {
+        metaParts.push(`🏢 ${escapeHtml(v.metadata.studio)}`);
+      }
+      if (metaParts.length > 0) {
+        html += `ℹ️ ${metaParts.join(' · ')}\n`;
+      }
+
+      html += `\n`;
+
+      keyboardButtons.push([Markup.button.callback(`🎬 Get ${v.code}`, `download:${v.id}`)]);
     });
+
+    html += `─────────────────────────\n`;
+    html += `👇 <i>Tap a button below to get the video directly:</i>`;
 
     // Pagination row
     const navRow: any[] = [];
     if (page > 0) {
-      navRow.push(Markup.button.callback('⬅️ Previous', `search:${rawQuery}:${page - 1}`));
+      navRow.push(Markup.button.callback('⬅️ Prev', `search:${rawQuery}:${page - 1}`));
+    }
+    if (totalPages > 1) {
+      navRow.push(Markup.button.callback(`📄 ${page + 1}/${totalPages}`, `search:${rawQuery}:${page}`));
     }
     if (page + 1 < totalPages) {
       navRow.push(Markup.button.callback('Next ➡️', `search:${rawQuery}:${page + 1}`));
@@ -673,10 +710,25 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
       keyboardButtons.push(navRow);
     }
 
-    return ctx.replyWithMarkdown(text, Markup.inlineKeyboard(keyboardButtons));
+    if (ctx.callbackQuery) {
+      return ctx.editMessageText(html, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard(keyboardButtons),
+      }).catch(() => {
+        return ctx.reply(html, {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard(keyboardButtons),
+        });
+      });
+    }
+
+    return ctx.reply(html, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard(keyboardButtons),
+    });
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
-    return ctx.reply(`Search error: ${errMsg}`);
+    return ctx.reply(`⚠️ Search error: ${errMsg}`);
   }
 }
 
