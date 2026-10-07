@@ -177,6 +177,30 @@ export function getBot(): Telegraf | null {
     }
   });
 
+  // 8. Force-sub membership recheck
+  bot.action('check_sub', async (ctx) => {
+    await ctx.answerCbQuery('Checking membership...');
+    if (!ctx.from) return;
+
+    const forceSub = await checkUserForceSub(bot, ctx.from.id);
+    if (forceSub.passed) {
+      return ctx.reply('✅ Membership verified. You can now search for videos.');
+    }
+
+    const buttons: any[] = forceSub.missingChannels.map(ch =>
+      Markup.button.url(
+        `Join ${ch.title}`,
+        ch.invite_link || `https://t.me/${ch.channel_id.replace('@', '')}`
+      )
+    );
+    buttons.push(Markup.button.callback('🔄 Check Again', 'check_sub'));
+
+    return ctx.reply(
+      '⚠️ You still need to join the required channel(s).',
+      Markup.inlineKeyboard(buttons.map(b => [b]))
+    );
+  });
+
   // 8. Pagination callback query for search results
   bot.action(/^search:(.+):(\d+)$/, async (ctx) => {
     const query = ctx.match[1];
