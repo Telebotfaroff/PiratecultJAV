@@ -270,6 +270,11 @@ export function createApp(): express.Express {
         return res.status(upstream.status).send(`Upstream returned ${upstream.status}`);
       }
 
+      // If upstream redirected to a "now_printing" placeholder image, treat as not found so fallback fires
+      if (upstream.url && upstream.url.includes('now_printing')) {
+        return res.status(404).send('Placeholder image');
+      }
+
       const contentType = upstream.headers.get('content-type') || 'image/jpeg';
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');

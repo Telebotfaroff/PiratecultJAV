@@ -28,19 +28,33 @@ function getThumbnailUrl(rawUrl?: unknown): string {
   return `/api/proxy/image?url=${encodeURIComponent(trimmed)}`;
 }
 
+export function getHighResCoverUrl(code?: string): string | null {
+  if (!code) return null;
+  const match = code.trim().toLowerCase().match(/^([a-z]+)[-_]?0*([0-9]+)$/i);
+  if (!match) return null;
+  const dmmId = match[1] + match[2].padStart(5, '0');
+  return `https://pics.dmm.co.jp/digital/video/${dmmId}/${dmmId}pl.jpg`;
+}
+
 function VideoThumbnail({
   src,
+  highResSrc,
   alt,
   className,
   fallbackSize = 10,
 }: {
   src?: string | null;
+  highResSrc?: string | null;
   alt: string;
   className?: string;
   fallbackSize?: number;
 }) {
+  const [useFallback, setUseFallback] = useState(false);
   const [error, setError] = useState(false);
-  const resolvedUrl = src ? getThumbnailUrl(src) : '';
+
+  // If high-res cover fails, seamlessly fall back to scene screenshot
+  const targetUrl = !useFallback && highResSrc ? highResSrc : src;
+  const resolvedUrl = targetUrl ? getThumbnailUrl(targetUrl) : '';
 
   if (!resolvedUrl || error) {
     return (
@@ -56,7 +70,13 @@ function VideoThumbnail({
       alt={alt}
       loading="lazy"
       referrerPolicy="no-referrer"
-      onError={() => setError(true)}
+      onError={() => {
+        if (!useFallback && highResSrc && src && highResSrc !== src) {
+          setUseFallback(true);
+        } else {
+          setError(true);
+        }
+      }}
       className={className || 'h-full w-full object-cover'}
     />
   );
@@ -166,21 +186,52 @@ function VideoDetails({ id }: { id: string }) {
 
   const metadata = video.metadata || {};
   const thumbnail = metadata.thumbnailUrl || '';
+  const hdCover = getHighResCoverUrl(video.code);
+  const [viewMode, setViewMode] = useState<'cover' | 'scene'>(hdCover ? 'cover' : 'scene');
   const actresses = metadata.actresses || [];
   const genres = metadata.genres || [];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100">
-      <div className="mx-auto max-w-5xl px-4 py-7 sm:px-6 sm:py-10">
+      <div className="mx-auto max-w-6xl px-4 py-7 sm:px-6 sm:py-10">
         <a href="/" className="inline-flex items-center gap-2 text-sm text-slate-400 hover:text-white">
           <ArrowLeft className="h-4 w-4" /> Back to catalog
         </a>
 
-        <main className="mt-7 grid gap-8 md:grid-cols-[320px_1fr]">
-          <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900">
-            <div className="aspect-[3/4] bg-slate-900">
-              <VideoThumbnail src={thumbnail} alt={video.title || video.code} fallbackSize={12} />
+        <main className="mt-7 grid gap-8 md:grid-cols-[480px_1fr]">
+          <div className="space-y-3">
+            <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900 shadow-2xl">
+              <div className="relative aspect-video bg-slate-950">
+                <VideoThumbnail
+                  src={thumbnail}
+                  highResSrc={viewMode === 'cover' ? hdCover : undefined}
+                  alt={video.title || video.code}
+                  fallbackSize={14}
+                />
+                <div className="absolute right-2.5 top-2.5 rounded-md bg-slate-950/85 px-2 py-0.5 font-mono text-[10px] font-semibold tracking-wider text-emerald-400">
+                  {viewMode === 'cover' && hdCover ? 'HD JACKET' : 'SCENE CAPTURE'}
+                </div>
+              </div>
             </div>
+
+            {hdCover && thumbnail && (
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setViewMode('cover')}
+                  className={`flex-1 rounded-xl py-2 text-xs font-medium transition ${viewMode === 'cover' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40' : 'border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white'}`}
+                >
+                  ✨ HD Cover (800x538)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('scene')}
+                  className={`flex-1 rounded-xl py-2 text-xs font-medium transition ${viewMode === 'scene' ? 'bg-indigo-600 text-white shadow-md shadow-indigo-950/40' : 'border border-slate-800 bg-slate-900/80 text-slate-400 hover:text-white'}`}
+                >
+                  🎬 Scene Capture (16:9)
+                </button>
+              </div>
+            )}
           </div>
 
           <section>
@@ -307,10 +358,10 @@ export default function App() {
         {error && <div className="mb-6 rounded-xl border border-rose-900/60 bg-rose-950/30 p-4 text-sm text-rose-300">{error}</div>}
 
         {loading ? (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
-            {Array.from({ length: 12 }).map((_, i) => (
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
+            {Array.from({ length: 8 }).map((_, i) => (
               <div key={i} className="overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
-                <div className="aspect-[3/4] animate-pulse bg-slate-800" />
+                <div className="aspect-video animate-pulse bg-slate-800" />
                 <div className="space-y-2 p-3"><div className="h-4 animate-pulse rounded bg-slate-800" /><div className="h-3 w-2/3 animate-pulse rounded bg-slate-800" /></div>
               </div>
             ))}
@@ -322,15 +373,17 @@ export default function App() {
             <p className="mt-1 text-sm text-slate-500">{query ? 'Try another code or search term.' : 'There are no available indexed posts yet.'}</p>
           </div>
         ) : (
-          <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6">
+          <div className="grid grid-cols-1 gap-6 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
             {videos.map((video) => {
               const thumbnail = video.metadata?.thumbnailUrl || '';
+              const hdCover = getHighResCoverUrl(video.code);
               const actresses = video.metadata?.actresses || [];
               return (
                 <a key={video.id} href={'/video/' + encodeURIComponent(video.id)} className="group block overflow-hidden rounded-xl border border-slate-800 bg-slate-900/80 transition hover:-translate-y-0.5 hover:border-slate-700">
-                  <div className="relative aspect-[3/4] overflow-hidden bg-slate-900">
+                  <div className="relative aspect-video overflow-hidden bg-slate-950">
                     <VideoThumbnail
                       src={thumbnail}
+                      highResSrc={hdCover}
                       alt={video.title || video.code}
                       className="h-full w-full object-cover transition duration-300 group-hover:scale-105"
                       fallbackSize={10}
