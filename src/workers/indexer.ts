@@ -1,4 +1,4 @@
-import { claimNextJob, updateJobStatus, IndexJob } from '../services/indexJobs.ts';
+import { claimNextJob, updateJobStatus, recoverStaleJobs, IndexJob } from '../services/indexJobs.ts';
 import { javtifulProvider, ProviderNotFoundError, ProviderTemporaryError } from '../providers/javtiful/index.ts';
 import { upsertVideoFromProvider } from '../services/videos.ts';
 
@@ -8,6 +8,9 @@ export class IndexerWorker {
   private readonly pollIntervalMs = 4000;
   private readonly delayBetweenRequestsMs = 2000;
   private readonly maxAttempts = 3;
+  private readonly staleJobMs = 15 * 60 * 1000;
+  private readonly recoveryIntervalMs = 60 * 1000;
+  private lastRecoveryAt = 0;
 
   public start(): void {
     if (this.isRunning) return;
@@ -46,6 +49,19 @@ export class IndexerWorker {
   }
 
   private async processNextJob(): Promise<void> {
+    // Recover jobs stranded in "processing" by a crash/restart.
+    if (Date.now() - this.lastRecoveryAt >= this.recoveryIntervalMs) {
+      try {
+        const recovered = await recoverStaleJobs(this.staleJobMs);
+        if (recovered > 0) {
+          console.log(`[IndexerWorker] Recovered ${recovered} stale job(s).`);
+        }
+      } catch (err) {
+        console.warn('[IndexerWorker] Stale-job recovery failed:', err instanceof Error ? err.message : String(err));
+      }
+      this.lastRecoveryAt = Date.now();
+    }
+
     // 1. Atomically claim next queued job
     let job: IndexJob | null = null;
     try {
@@ -105,8 +121,9 @@ export class IndexerWorker {
         if (job.attempts < this.maxAttempts) {
           // Requeue job for retry with exponential backoff info
           const backoffSec = Math.pow(2, job.attempts) * 10;
+          const nextAttemptAt = new Date(Date.now() + backoffSec * 1000).toISOString();
           console.log(`[IndexerWorker] Re-queueing job #${job.id} after backoff (~${backoffSec}s)...`);
-          await updateJobStatus(job.id, 'queued', `Temporary error (Attempt ${job.attempts}): ${errMsg}`);
+          await updateJobStatus(job.id, 'queued', `Temporary error (Attempt ${job.attempts}): ${errMsg}`, nextAttemptAt);
         } else {
           console.error(`[IndexerWorker] Job #${job.id} failed after reaching maximum attempts (${this.maxAttempts}).`);
           await updateJobStatus(job.id, 'failed', `Max retry attempts (${this.maxAttempts}) exceeded: ${errMsg}`);
@@ -117,7 +134,9 @@ export class IndexerWorker {
         console.error(`[IndexerWorker] Job #${job.id} failed with error:`, errMsg);
 
         if (job.attempts < this.maxAttempts) {
-          await updateJobStatus(job.id, 'queued', `Unexpected error: ${errMsg}`);
+          const backoffSec = Math.pow(2, job.attempts) * 10;
+          const nextAttemptAt = new Date(Date.now() + backoffSec * 1000).toISOString();
+          await updateJobStatus(job.id, 'queued', `Unexpected error: ${errMsg}`, nextAttemptAt);
         } else {
           await updateJobStatus(job.id, 'failed', `Failed: ${errMsg}`);
         }
