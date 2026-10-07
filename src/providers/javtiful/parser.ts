@@ -8,11 +8,79 @@ export interface JavMetadata {
   duration: string | null;
   date: string | null;
   actresses: string[];
+  studio: string | null;
+  genres: string[];
   sourceUrl: string;
 }
 
+function cleanText(value: string | undefined | null): string {
+  return (value || '').replace(/\s+/g, ' ').trim();
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values.map(cleanText).filter(Boolean))];
+}
+
+function absoluteUrl(value: string | undefined | null, pageUrl: string): string | null {
+  const raw = cleanText(value);
+  if (!raw) return null;
+  try {
+    const url = new URL(raw, pageUrl);
+    if (!/^https?:$/i.test(url.protocol)) return null;
+    return url.toString();
+  } catch {
+    return null;
+  }
+}
+
+function escapeRegex(value: string): string {
+  return value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+}
+
+function extractLabeledValue($: cheerio.CheerioAPI, labels: string[]): string | null {
+  const wanted = labels.map(label => label.toLowerCase());
+  let result: string | null = null;
+
+  $('dt, th, .label, .meta-label, .detail-label, .field-label, p, div, span, li').each((_, el) => {
+    if (result) return;
+
+    const text = cleanText($(el).text());
+    if (!text || text.length > 180) return;
+
+    const lower = text.toLowerCase();
+    const label = wanted.find(item =>
+      lower === item || lower.startsWith(item + ':') || lower.startsWith(item + ' ')
+    );
+    if (!label) return;
+
+    const inlineValue = text.replace(
+      new RegExp('^' + escapeRegex(label) + '\\s*[:\\-]?\\s*', 'i'),
+      '',
+    ).trim();
+
+    if (inlineValue && inlineValue.toLowerCase() !== label) {
+      result = inlineValue;
+      return;
+    }
+
+    const sibling = cleanText($(el).next().text());
+    if (sibling) {
+      result = sibling;
+      return;
+    }
+
+    const parentText = cleanText($(el).parent().text());
+    const match = parentText.match(
+      new RegExp(escapeRegex(label) + '\\s*[:\\-]\\s*(.+)$', 'i'),
+    );
+    if (match?.[1]) result = cleanText(match[1]);
+  });
+
+  return result;
+}
+
 /**
- * Extracts video page URLs from Javtiful search results HTML
+ * Extracts video page URLs from Javtiful search results HTML.
  */
 export function parseSearchResults(html: string, baseUrl: string): string[] {
   const $ = cheerio.load(html);
@@ -21,10 +89,8 @@ export function parseSearchResults(html: string, baseUrl: string): string[] {
   $('a[href]').each((_, el) => {
     const href = $(el).attr('href');
     if (href && (href.includes('/video/') || href.includes('/v/'))) {
-      const fullUrl = href.startsWith('http') ? href : `${baseUrl}${href.startsWith('/') ? '' : '/'}${href}`;
-      if (!results.includes(fullUrl)) {
-        results.push(fullUrl);
-      }
+      const fullUrl = href.startsWith('http') ? href : new URL(href, baseUrl).toString();
+      if (!results.includes(fullUrl)) results.push(fullUrl);
     }
   });
 
@@ -33,75 +99,131 @@ export function parseSearchResults(html: string, baseUrl: string): string[] {
 
 /**
  * Parses a Javtiful video detail page into JavMetadata.
- * STRICT NON-NEGOTIABLE RULE:
- * Absolutely NO HLS, MP4, stream URLs, CDN stream tokens, or download URLs.
+ *
+ * SECURITY RULE:
+ * Never return HLS, MP4, player, CDN, stream-token, or download URLs.
+ * Only public page URLs and image URLs are retained.
  */
 export function parseVideoPage(html: string, pageUrl: string, expectedCode: string): JavMetadata {
   const $ = cheerio.load(html);
 
-  // 1. Extract Title
-  let title = $('h1').first().text().trim();
-  if (!title) {
-    title = $('meta[property="og:title"]').attr('content') || $('title').text().trim();
-  }
-  // Clean up title suffixes like " - Javtiful"
+  let title = cleanText(
+    $('h1').first().text() ||
+    $('meta[property="og:title"]').attr('content') ||
+    $('title').text(),
+  );
   title = title.replace(/\s*[-–|]\s*Javtiful.*$/i, '').trim();
 
-  // 2. Extract Description
-  let description = $('meta[name="description"]').attr('content') ||
+  const description = cleanText(
+    $('meta[name="description"]').attr('content') ||
     $('meta[property="og:description"]').attr('content') ||
-    $('.description, .video-description, #description').text().trim() ||
-    '';
+    $('.description, .video-description, #description, [class*="description"]').first().text(),
+  );
 
-  // 3. Extract Thumbnail Cover URL (web image only)
-  let thumbnailUrl = $('meta[property="og:image"]').attr('content') ||
-    $('meta[name="twitter:image"]').attr('content') ||
-    $('video').attr('poster') ||
-    $('.cover img, .poster img, .player img').first().attr('src') ||
-    null;
+  let thumbnailUrl =
+    absoluteUrl($('meta[property="og:image"]').attr('content'), pageUrl) ||
+    absoluteUrl($('meta[name="twitter:image"]').attr('content'), pageUrl) ||
+    absoluteUrl($('video').first().attr('poster'), pageUrl) ||
+    absoluteUrl($('.cover img, .poster img, .thumbnail img, .player img').first().attr('src'), pageUrl);
 
-  if (thumbnailUrl && !thumbnailUrl.startsWith('http')) {
-    const base = new URL(pageUrl).origin;
-    thumbnailUrl = `${base}${thumbnailUrl.startsWith('/') ? '' : '/'}${thumbnailUrl}`;
+  if (!thumbnailUrl) {
+    $('script[type="application/ld+json"]').each((_, el) => {
+      if (thumbnailUrl) return;
+      try {
+        const raw = JSON.parse($(el).contents().text());
+        const items = Array.isArray(raw) ? raw : [raw];
+
+        for (const item of items) {
+          const image = item?.image;
+          const candidate = Array.isArray(image)
+            ? image[0]
+            : typeof image === 'object'
+              ? image?.url
+              : image;
+
+          const resolved = absoluteUrl(candidate, pageUrl);
+          if (resolved && /\.(?:jpe?g|png|webp)(?:[?#].*)?$/i.test(resolved)) {
+            thumbnailUrl = resolved;
+            break;
+          }
+        }
+      } catch {
+        // Ignore malformed JSON-LD.
+      }
+    });
   }
 
-  // 4. Extract Actresses
   const actresses: string[] = [];
-  $('a[href*="/actress/"], a[href*="/star/"], a[href*="/model/"], .actress a, .models a').each((_, el) => {
-    const name = $(el).text().trim();
-    if (name && !actresses.includes(name)) {
-      actresses.push(name);
-    }
+  $(
+    'a[href*="/actress/"], a[href*="/actresses/"], ' +
+    'a[href*="/star/"], a[href*="/stars/"], ' +
+    'a[href*="/model/"], a[href*="/models/"], ' +
+    '.actress a, .actresses a, .models a, .cast a, [class*="actress"] a',
+  ).each((_, el) => {
+    const name = cleanText($(el).text());
+    if (name && name.length <= 100) actresses.push(name);
   });
 
-  // 5. Extract Duration
-  let duration: string | null = null;
-  const durationMatch = html.match(/(?:Duration|Length)[:\s]*([0-9]{1,3}\s*(?:min|mins|分|hr|hours)?|[0-9]{1,2}:[0-9]{2}:[0-9]{2})/i);
-  if (durationMatch) {
-    duration = durationMatch[1].trim();
-  } else {
-    const badgeText = $('.duration, .time, .badge-duration').first().text().trim();
-    if (badgeText) duration = badgeText;
+  let studio: string | null = extractLabeledValue(
+    $,
+    ['Studio', 'Maker', 'Production', 'Publisher'],
+  );
+
+  if (!studio) {
+    $(
+      'a[href*="/studio/"], a[href*="/studios/"], ' +
+      '.studio a, .studios a, [class*="studio"] a, [class*="maker"] a',
+    ).each((_, el) => {
+      if (!studio) {
+        const name = cleanText($(el).text());
+        if (name && name.length <= 150) studio = name;
+      }
+    });
   }
 
-  // 6. Extract Release Date
-  let date: string | null = null;
-  const dateMatch = html.match(/(?:Release Date|Published|Date)[:\s]*([0-9]{4}[-/][0-9]{2}[-/][0-9]{2})/i);
-  if (dateMatch) {
-    date = dateMatch[1];
-  } else {
-    const dateText = $('.date, .release-date, time').first().text().trim();
+  const genres: string[] = [];
+  $(
+    'a[href*="/genre/"], a[href*="/genres/"], ' +
+    '.genre a, .genres a, .tags a, [class*="genre"] a, [class*="tag"] a',
+  ).each((_, el) => {
+    const value = cleanText($(el).text());
+    if (value && value.length <= 80) genres.push(value);
+  });
+
+  let duration = extractLabeledValue($, ['Duration', 'Length', 'Runtime']);
+
+  if (!duration) {
+    const durationMatch = $('body').text().match(
+      /(?:Duration|Length|Runtime)\s*[:\-]?\s*([0-9]{1,3}:?[0-9]{2}(?::[0-9]{2})?|[0-9]{1,3}\s*(?:min|mins|minutes|hr|hrs|hours|分))/i,
+    );
+    duration = durationMatch?.[1] ? cleanText(durationMatch[1]) : null;
+  }
+
+  if (!duration) {
+    duration = cleanText($('.duration, .time, .runtime, .badge-duration').first().text()) || null;
+  }
+
+  let date = extractLabeledValue($, ['Release Date', 'Release', 'Published', 'Date']);
+
+  if (!date) {
+    date = cleanText($('time[datetime]').first().attr('datetime')) || null;
+  }
+
+  if (!date) {
+    const dateText = cleanText($('.date, .release-date, .published, time').first().text());
     if (dateText && /\d{4}/.test(dateText)) date = dateText;
   }
 
   return {
     code: expectedCode,
-    title: title || `${expectedCode} Video`,
-    description: description.slice(0, 1000),
+    title: title || expectedCode + ' Video',
+    description: description.slice(0, 2000),
     thumbnailUrl,
     duration,
     date,
-    actresses,
+    actresses: uniqueStrings(actresses),
+    studio: studio ? cleanText(studio) : null,
+    genres: uniqueStrings(genres),
     sourceUrl: pageUrl,
   };
 }
