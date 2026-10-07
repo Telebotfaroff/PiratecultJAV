@@ -19,10 +19,13 @@ export interface VideoRecord {
   updated_at?: string;
 }
 
-export async function searchVideos(query: string, limit = 5, offset = 0): Promise<{ videos: VideoRecord[]; total: number }> {
+export async function searchVideos(query: string, limit = 24, offset = 0): Promise<{ videos: VideoRecord[]; total: number }> {
   const supabase = getSupabase();
   const trimmed = query.trim();
   const normalized = normalizeCode(trimmed);
+
+  const safeLimit = Math.min(Math.max(Number.isFinite(limit) ? Math.floor(limit) : 24, 1), 100);
+  const safeOffset = Math.max(Number.isFinite(offset) ? Math.floor(offset) : 0, 0);
 
   let dbQuery = supabase
     .from('videos')
@@ -30,19 +33,19 @@ export async function searchVideos(query: string, limit = 5, offset = 0): Promis
     .eq('status', 'available');
 
   if (normalized) {
-    // Exact or prefix match on normalized code
-    dbQuery = dbQuery.ilike('normalized_code', `%${normalized}%`);
-  } else {
-    // Search in title, code or description
-    dbQuery = dbQuery.or(`title.ilike.%${trimmed}%,code.ilike.%${trimmed}%`);
+    dbQuery = dbQuery.ilike('normalized_code', '%' + normalized + '%');
+  } else if (trimmed) {
+    dbQuery = dbQuery.or(
+      'title.ilike.%' + trimmed + '%,code.ilike.%' + trimmed + '%,description.ilike.%' + trimmed + '%'
+    );
   }
 
   const { data, count, error } = await dbQuery
     .order('created_at', { ascending: false })
-    .range(offset, offset + limit - 1);
+    .range(safeOffset, safeOffset + safeLimit - 1);
 
   if (error) {
-    throw new Error(`Database error searching videos: ${error.message}`);
+    throw new Error('Database error searching videos: ' + error.message);
   }
 
   return {
@@ -61,25 +64,15 @@ export async function getVideoByCode(code: string): Promise<VideoRecord | null> 
     .eq('normalized_code', norm)
     .maybeSingle();
 
-  if (error) {
-    throw new Error(`Database error fetching video by code: ${error.message}`);
-  }
-
+  if (error) throw new Error('Database error fetching video by code: ' + error.message);
   return (data as VideoRecord) || null;
 }
 
 export async function getVideoById(id: string): Promise<VideoRecord | null> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('videos')
-    .select('*')
-    .eq('id', id)
-    .maybeSingle();
+  const { data, error } = await supabase.from('videos').select('*').eq('id', id).maybeSingle();
 
-  if (error) {
-    throw new Error(`Database error fetching video by id: ${error.message}`);
-  }
-
+  if (error) throw new Error('Database error fetching video by id: ' + error.message);
   return (data as VideoRecord) || null;
 }
 
@@ -100,7 +93,7 @@ export async function upsertVideoFromProvider(params: UpsertVideoParams): Promis
   const record = {
     code: params.code,
     normalized_code: norm,
-    title: params.metadata?.title || `${norm} Video`,
+    title: params.metadata?.title || (norm + ' Video'),
     description: params.metadata?.description || null,
     provider: 'javtiful',
     thumbnail_file_id: params.thumbnail_file_id || null,
@@ -118,40 +111,21 @@ export async function upsertVideoFromProvider(params: UpsertVideoParams): Promis
     updated_at: new Date().toISOString(),
   };
 
-  const { data, error } = await supabase
-    .from('videos')
-    .upsert(record, { onConflict: 'normalized_code' })
-    .select()
-    .single();
-
-  if (error) {
-    throw new Error(`Database error upserting video: ${error.message}`);
-  }
-
+  const { data, error } = await supabase.from('videos').upsert(record, { onConflict: 'normalized_code' }).select().single();
+  if (error) throw new Error('Database error upserting video: ' + error.message);
   return data as VideoRecord;
 }
 
 export async function getRecentVideos(limit = 20): Promise<VideoRecord[]> {
   const supabase = getSupabase();
-  const { data, error } = await supabase
-    .from('videos')
-    .select('*')
-    .order('created_at', { ascending: false })
-    .limit(limit);
-
-  if (error) {
-    throw new Error(`Database error fetching recent videos: ${error.message}`);
-  }
-
+  const { data, error } = await supabase.from('videos').select('*').order('created_at', { ascending: false }).limit(limit);
+  if (error) throw new Error('Database error fetching recent videos: ' + error.message);
   return (data as VideoRecord[]) || [];
 }
 
 export async function countVideos(): Promise<number> {
   const supabase = getSupabase();
-  const { count, error } = await supabase
-    .from('videos')
-    .select('*', { count: 'exact', head: true });
-
+  const { count, error } = await supabase.from('videos').select('*', { count: 'exact', head: true });
   if (error) return 0;
   return count || 0;
 }
