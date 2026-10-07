@@ -89,9 +89,13 @@ BEGIN
 
   SELECT * INTO referrer_user FROM users
     WHERE telegram_user_id = p_referrer FOR UPDATE;
+  IF NOT FOUND THEN
+    RETURN QUERY SELECT FALSE, NULL::TIMESTAMPTZ;
+    RETURN;
+  END IF;
+
   SELECT * INTO referred_user FROM users
     WHERE telegram_user_id = p_referred FOR UPDATE;
-
   IF NOT FOUND OR referred_user.referred_by IS NOT NULL THEN
     RETURN QUERY SELECT FALSE, referred_user.unlimited_until;
     RETURN;
