@@ -37,6 +37,26 @@ function escapeRegex(value: string): string {
   return value.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
 }
 
+function pageMatchesExpectedCode($: cheerio.CheerioAPI, pageUrl: string, expectedCode: string): boolean {
+  const normalizedExpected = expectedCode.toLowerCase().replace(/[^a-z0-9]/g, '');
+  if (!normalizedExpected) return false;
+
+  const focusedText = [
+    pageUrl,
+    $('h1').first().text(),
+    $('title').first().text(),
+    $('meta[property="og:title"]').attr('content'),
+    $('meta[name="description"]').attr('content'),
+    $('meta[property="og:description"]').attr('content'),
+  ]
+    .map(value => cleanText(value))
+    .join(' ')
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '');
+
+  return focusedText.includes(normalizedExpected);
+}
+
 function extractLabeledValue($: cheerio.CheerioAPI, labels: string[]): string | null {
   const wanted = labels.map(label => label.toLowerCase());
   let result: string | null = null;
@@ -107,6 +127,10 @@ export function parseSearchResults(html: string, baseUrl: string): string[] {
 export function parseVideoPage(html: string, pageUrl: string, expectedCode: string): JavMetadata {
   const $ = cheerio.load(html);
 
+  if (!pageMatchesExpectedCode($, pageUrl, expectedCode)) {
+    throw new Error(`Javtiful page does not match requested code ${expectedCode}: ${pageUrl}`);
+  }
+
   let title = cleanText(
     $('h1').first().text() ||
     $('meta[property="og:title"]').attr('content') ||
@@ -154,11 +178,13 @@ export function parseVideoPage(html: string, pageUrl: string, expectedCode: stri
   }
 
   const actresses: string[] = [];
+  // Only accept links that explicitly point to an actress/star/model route.
+  // Do not use broad class selectors here: Javtiful's actress section can
+  // contain related-video cards, quality labels, and durations.
   $(
     'a[href*="/actress/"], a[href*="/actresses/"], ' +
     'a[href*="/star/"], a[href*="/stars/"], ' +
-    'a[href*="/model/"], a[href*="/models/"], ' +
-    '.actress a, .actresses a, .models a, .cast a, [class*="actress"] a',
+    'a[href*="/model/"], a[href*="/models/"]',
   ).each((_, el) => {
     const name = cleanText($(el).text());
     if (name && name.length <= 100) actresses.push(name);
@@ -171,8 +197,7 @@ export function parseVideoPage(html: string, pageUrl: string, expectedCode: stri
 
   if (!studio) {
     $(
-      'a[href*="/studio/"], a[href*="/studios/"], ' +
-      '.studio a, .studios a, [class*="studio"] a, [class*="maker"] a',
+      'a[href*="/studio/"], a[href*="/studios/"]',
     ).each((_, el) => {
       if (!studio) {
         const name = cleanText($(el).text());
@@ -183,8 +208,7 @@ export function parseVideoPage(html: string, pageUrl: string, expectedCode: stri
 
   const genres: string[] = [];
   $(
-    'a[href*="/genre/"], a[href*="/genres/"], ' +
-    '.genre a, .genres a, .tags a, [class*="genre"] a, [class*="tag"] a',
+    'a[href*="/genre/"], a[href*="/genres/"]',
   ).each((_, el) => {
     const value = cleanText($(el).text());
     if (value && value.length <= 80) genres.push(value);
