@@ -8,6 +8,8 @@ import { checkUserForceSub } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
 import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/dump.ts';
+import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
+import { getSetting, setSetting } from '../services/settings.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
@@ -20,6 +22,10 @@ export function getBot(): Telegraf | null {
   }
 
   const bot = new Telegraf(config.botToken);
+
+  // Automatically delete bot-created messages according to the admin-configured timer.
+  // Dump-channel storage messages are excluded so indexed videos remain available.
+  installMessageDeleteTimer(bot);
 
   // Global error handler to catch and report errors gracefully
   bot.catch((err: unknown, ctx) => {
@@ -153,7 +159,33 @@ export function getBot(): Telegraf | null {
     return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
   });
 
-  // 7. Video download callback query
+  // 7. Admin auto-delete timer
+  bot.command('deletetimer', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+
+    const arg = ctx.message.text.replace(/^\/deletetimer\s*/i, '').trim().toLowerCase();
+    const current = await getSetting<number>('delete_timer_seconds', 0);
+
+    if (!arg) {
+      return ctx.reply(current > 0
+        ? '🗑️ Auto-delete timer: ' + current + ' seconds.\nUse /deletetimer <seconds> to change it or /deletetimer off to disable.'
+        : '🗑️ Auto-delete timer is OFF.\nUse /deletetimer <seconds> to enable it.');
+    }
+
+    if (arg === 'off' || arg === '0' || arg === 'disable') {
+      await setSetting('delete_timer_seconds', 0);
+      return ctx.reply('✅ Auto-delete timer disabled.');
+    }
+
+    const seconds = Number.parseInt(arg, 10);
+    if (!Number.isInteger(seconds) || seconds < 1 || seconds > 86400) {
+      return ctx.reply('Usage: /deletetimer <seconds>\nExample: /deletetimer 60\nRange: 1–86400 seconds, or use /deletetimer off.');
+    }
+
+    await setSetting('delete_timer_seconds', seconds);
+    return ctx.reply('✅ Auto-delete timer set to ' + seconds + ' seconds.');
+  });
+  // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
     const videoId = ctx.match[1];
     await ctx.answerCbQuery('Fetching video...');
@@ -196,7 +228,7 @@ export function getBot(): Telegraf | null {
     }
   });
 
-  // 8. Force-sub membership recheck
+  // 9. Force-sub membership recheck
   bot.action('check_sub', async (ctx) => {
     await ctx.answerCbQuery('Checking membership...');
     if (!ctx.from) return;
@@ -220,7 +252,7 @@ export function getBot(): Telegraf | null {
     );
   });
 
-  // 8. Pagination callback query for search results
+  // 10. Pagination callback query for search results
   bot.action(/^search:(.+):(\d+)$/, async (ctx) => {
     const query = ctx.match[1];
     const page = parseInt(ctx.match[2], 10) || 0;
@@ -229,7 +261,7 @@ export function getBot(): Telegraf | null {
     await handleSearchQuery(ctx, query, page);
   });
 
-  // 9. Dump Channel listener for automated indexing
+  // 11. Dump Channel listener for automated indexing
   bot.on('channel_post', async (ctx) => {
     const post = ctx.channelPost;
     const chatId = String(ctx.chat.id);
@@ -272,7 +304,7 @@ export function getBot(): Telegraf | null {
     }
   });
 
-  // 10. Admin session handler for incoming text/video
+  // 12. Admin session handler for incoming text/video
   bot.on('message', async (ctx, next) => {
     if (!ctx.from || !isAdmin(ctx.from.id)) {
       return next();
@@ -364,7 +396,7 @@ export function getBot(): Telegraf | null {
     return next();
   });
 
-  // 11. Generic text search handler
+  // 13. Generic text search handler
   bot.on('text', async (ctx) => {
     // Check force-sub for normal users
     if (ctx.from) {
