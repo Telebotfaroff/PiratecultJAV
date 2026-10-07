@@ -129,6 +129,39 @@ export default function App() {
   const [status, setStatus] = useState<SystemStatus | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [authenticated, setAuthenticated] = useState(false);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [adminKey, setAdminKey] = useState('');
+  const [loginError, setLoginError] = useState('');
+
+  const apiFetch = useCallback(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const res = await fetch(input, { ...init, credentials: 'same-origin' });
+    if (res.status === 401) {
+      setAuthenticated(false);
+    }
+    return res;
+  }, []);
+
+  const login = useCallback(async () => {
+    setLoginError('');
+    try {
+      const res = await fetch('/api/auth/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ key: adminKey }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setLoginError(data.error || 'Authentication failed');
+        return;
+      }
+      setAuthenticated(true);
+      setAdminKey('');
+    } catch {
+      setLoginError('Unable to reach the server');
+    }
+  }, [adminKey]);
 
   // Queue state
   const [jobs, setJobs] = useState<IndexJob[]>([]);
@@ -158,6 +191,14 @@ export default function App() {
   const [schemaSql, setSchemaSql] = useState('');
   const [copiedSql, setCopiedSql] = useState(false);
 
+  useEffect(() => {
+    fetch('/api/auth/status', { credentials: 'same-origin' })
+      .then(res => res.json())
+      .then(data => setAuthenticated(Boolean(data.authenticated)))
+      .catch(() => setAuthenticated(false))
+      .finally(() => setAuthLoading(false));
+  }, []);
+
   // Fetch status
   const fetchStatus = useCallback(async () => {
     setStatusLoading(true);
@@ -180,7 +221,7 @@ export default function App() {
     setJobsLoading(true);
     try {
       const url = jobFilter === 'all' ? '/api/jobs' : `/api/jobs?status=${jobFilter}`;
-      const res = await fetch(url);
+      const res = await apiFetch(url);
       if (res.ok) {
         const data = await res.json();
         setJobs(data.jobs || []);
@@ -190,7 +231,7 @@ export default function App() {
     } finally {
       setJobsLoading(false);
     }
-  }, [jobFilter]);
+  }, [jobFilter, apiFetch]);
 
   // Fetch catalog videos
   const fetchCatalog = useCallback(async () => {
@@ -213,7 +254,7 @@ export default function App() {
   // Fetch schema
   const fetchSchema = useCallback(async () => {
     try {
-      const res = await fetch('/api/schema/sql');
+      const res = await apiFetch('/api/schema/sql');
       if (res.ok) {
         const data = await res.json();
         setSchemaSql(data.sql || '');
@@ -241,7 +282,7 @@ export default function App() {
   const handleRetryJob = async (id: number) => {
     setRetryingJobId(id);
     try {
-      const res = await fetch(`/api/jobs/retry/${id}`, { method: 'POST' });
+      const res = await apiFetch(`/api/jobs/retry/${id}`, { method: 'POST' });
       if (res.ok) {
         await fetchJobs();
         await fetchStatus();
@@ -260,7 +301,7 @@ export default function App() {
     setProviderTesting(true);
     setProviderResult(null);
     try {
-      const res = await fetch('/api/provider/test', {
+      const res = await apiFetch('/api/provider/test', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ code: testCodeInput.trim() }),
@@ -284,7 +325,7 @@ export default function App() {
     setSimLoading(true);
     setSimResult(null);
     try {
-      const res = await fetch('/api/simulator/dump-post', {
+      const res = await apiFetch('/api/simulator/dump-post', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -311,6 +352,35 @@ export default function App() {
     setCopiedSql(true);
     setTimeout(() => setCopiedSql(false), 2000);
   };
+
+  if (authLoading) {
+    return <div className="min-h-screen bg-slate-950 text-slate-200 flex items-center justify-center">Checking admin session...</div>;
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4">
+        <form onSubmit={(e) => { e.preventDefault(); void login(); }} className="w-full max-w-sm bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-2xl">
+          <div>
+            <h1 className="text-lg font-semibold">PiratecultJAV Admin</h1>
+            <p className="text-xs text-slate-400 mt-1">Enter the configured admin API key.</p>
+          </div>
+          <input
+            type="password"
+            value={adminKey}
+            onChange={e => setAdminKey(e.target.value)}
+            placeholder="Admin API key"
+            autoComplete="current-password"
+            className="w-full bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm outline-none focus:border-indigo-500"
+          />
+          {loginError && <p className="text-xs text-rose-400">{loginError}</p>}
+          <button type="submit" className="w-full bg-indigo-600 hover:bg-indigo-500 rounded-lg py-2 text-sm font-medium">
+            Sign in
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-indigo-600 selection:text-white">
