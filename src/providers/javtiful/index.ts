@@ -79,11 +79,8 @@ export class JavtifulProvider {
         }
       }
 
-      // If no exact slug match, take the first search result if available
-      if (!targetPageUrl && videoUrls.length > 0) {
-        targetPageUrl = videoUrls[0];
-      }
-
+      // Never fall back to the first search result. That can silently index a
+      // completely different video under the requested code.
       if (!targetPageUrl) {
         // Cache negative result for 2 minutes
         this.cache.set(code, { data: null, expiresAt: now + this.NEGATIVE_TTL_MS });
@@ -103,7 +100,18 @@ export class JavtifulProvider {
       }
 
       const pageHtml = await pageResponse.text();
-      const metadata = parseVideoPage(pageHtml, targetPageUrl, code);
+
+      let metadata: JavMetadata;
+      try {
+        metadata = parseVideoPage(pageHtml, targetPageUrl, code);
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        if (message.includes('does not match requested code')) {
+          this.cache.set(code, { data: null, expiresAt: now + this.NEGATIVE_TTL_MS });
+          throw new ProviderNotFoundError(code);
+        }
+        throw err;
+      }
 
       // Cache successful result for 10 minutes
       this.cache.set(code, { data: metadata, expiresAt: now + this.SUCCESS_TTL_MS });
