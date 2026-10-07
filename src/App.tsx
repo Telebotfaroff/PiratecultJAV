@@ -322,41 +322,11 @@ function VideoDetails({
   );
 }
 
-export default function App() {
-  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
-  const [activeVideo, setActiveVideo] = useState<VideoRecord | null>(null);
-
-  useEffect(() => {
-    const handlePopState = () => {
-      setCurrentPath(window.location.pathname);
-    };
-    window.addEventListener('popstate', handlePopState);
-    return () => window.removeEventListener('popstate', handlePopState);
-  }, []);
-
-  const navigate = useCallback((path: string, initialVideo?: VideoRecord) => {
-    if (window.location.pathname !== path) {
-      window.history.pushState({}, '', path);
-    }
-    if (initialVideo) {
-      setActiveVideo(initialVideo);
-    }
-    setCurrentPath(path);
-    window.scrollTo({ top: 0, behavior: 'instant' });
-  }, []);
-
-  const detailMatch = currentPath.match(/^\/video\/([^/]+)\/?$/);
-  if (detailMatch) {
-    const videoId = decodeURIComponent(detailMatch[1]);
-    const matchedInitial = String(activeVideo?.id) === String(videoId) ? activeVideo : null;
-    return (
-      <VideoDetails
-        id={videoId}
-        initialVideo={matchedInitial}
-        onBack={() => navigate('/')}
-      />
-    );
-  }
+function CatalogPage({
+  navigate,
+}: {
+  navigate: (path: string, initialVideo?: VideoRecord) => void;
+}) {
 
   const [videos, setVideos] = useState<VideoRecord[]>([]);
   const [searchInput, setSearchInput] = useState('');
@@ -511,3 +481,43 @@ export default function App() {
     </div>
   );
 }
+
+export default function App() {
+  const [currentPath, setCurrentPath] = useState(() => window.location.pathname);
+  const [activeVideo, setActiveVideo] = useState<VideoRecord | null>(null);
+
+  useEffect(() => {
+    const handlePopState = () => {
+      setCurrentPath(window.location.pathname);
+    };
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
+
+  const navigate = useCallback((path: string, initialVideo?: VideoRecord) => {
+    if (window.location.pathname !== path) {
+      window.history.pushState({}, '', path);
+    }
+    if (initialVideo) {
+      setActiveVideo(initialVideo);
+    }
+    setCurrentPath(path);
+    window.scrollTo({ top: 0, behavior: 'instant' });
+  }, []);
+
+  const detailMatch = currentPath.match(/^\/video\/([^/]+)\/?$/);
+  if (detailMatch) {
+    const videoId = decodeURIComponent(detailMatch[1]);
+    const matchedInitial = String(activeVideo?.id) === String(videoId) ? activeVideo : null;
+    return (
+      <VideoDetails
+        id={videoId}
+        initialVideo={matchedInitial}
+        onBack={() => navigate('/')}
+      />
+    );
+  }
+
+  return <CatalogPage navigate={navigate} />;
+}
+
