@@ -528,6 +528,14 @@ export default function App() {
             Video Catalog
           </button>
           <button
+            onClick={() => setActiveTab('force-sub')}
+            className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap flex items-center gap-1.5 ${
+              activeTab === 'force-sub' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:text-slate-200'
+            }`}
+          >
+            <ShieldCheck className="h-3.5 w-3.5" /> Force Sub
+          </button>
+          <button
             onClick={() => setActiveTab('schema')}
             className={`px-3 py-1.5 text-xs font-medium rounded-md transition-colors whitespace-nowrap ${
               activeTab === 'schema'
@@ -1363,6 +1371,49 @@ export default function App() {
                 ))}
               </div>
             )}
+          </div>
+        )}
+
+        {/* TAB 6: FORCE SUB */}
+        {activeTab === 'force-sub' && (
+          <div className="space-y-4">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-5">
+              <div className="flex items-start justify-between gap-4 mb-4">
+                <div>
+                  <h2 className="text-base font-semibold text-slate-100">Force-Sub Channels</h2>
+                  <p className="text-xs text-slate-400 mt-1">Choose normal membership verification or Telegram join-request mode per channel.</p>
+                </div>
+                <button onClick={fetchForceSubChannels} className="p-2 rounded-lg hover:bg-slate-800 text-slate-400"><RefreshCw className={`h-4 w-4 ${forceSubLoading ? 'animate-spin' : ''}`} /></button>
+              </div>
+              <form onSubmit={saveForceSubChannel} className="grid grid-cols-1 md:grid-cols-2 gap-3 border-b border-slate-800 pb-5 mb-5">
+                <input value={forceSubForm.channelId} onChange={e => setForceSubForm({...forceSubForm, channelId: e.target.value})} placeholder="Channel ID, e.g. -100123456789" className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm" />
+                <input value={forceSubForm.title} onChange={e => setForceSubForm({...forceSubForm, title: e.target.value})} placeholder="Channel title" className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm" />
+                <input value={forceSubForm.inviteLink} onChange={e => setForceSubForm({...forceSubForm, inviteLink: e.target.value})} placeholder="Invite / join-request link" className="bg-slate-950 border border-slate-800 rounded-lg px-3 py-2 text-sm md:col-span-2" />
+                <label className="flex items-center gap-2 text-xs text-slate-300"><input type="checkbox" checked={forceSubForm.requestMode} onChange={e => setForceSubForm({...forceSubForm, requestMode: e.target.checked})} /> Request Mode — user must send a join request and wait for admin approval</label>
+                <button disabled={forceSubSaving} className="md:justify-self-end px-4 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 rounded-lg text-xs font-medium">{forceSubSaving ? 'Saving...' : 'Add / Update Channel'}</button>
+              </form>
+              <div className="space-y-3">
+                {forceSubChannels.length === 0 ? <div className="text-sm text-slate-500 py-6 text-center">No force-sub channels configured.</div> : forceSubChannels.map(ch => (
+                  <div key={ch.id} className="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                    <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+                      <div>
+                        <div className="font-medium text-slate-200">{ch.title}</div>
+                        <div className="text-[11px] font-mono text-slate-500 mt-1">{ch.channel_id}</div>
+                        {ch.invite_link && <div className="text-[11px] text-slate-500 mt-1 truncate max-w-md">{ch.invite_link}</div>}
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button onClick={() => updateForceSubChannel(ch, { request_mode: !ch.request_mode })} className={`px-3 py-1.5 rounded-lg text-xs font-medium border ${ch.request_mode ? 'bg-amber-500/10 border-amber-500/30 text-amber-300' : 'bg-slate-900 border-slate-700 text-slate-400'}`}>
+                          {ch.request_mode ? '📨 Request Mode ON' : '👤 Normal Join Mode'}
+                        </button>
+                        <button onClick={() => updateForceSubChannel(ch, { is_active: !ch.is_active })} className={`px-3 py-1.5 rounded-lg text-xs border ${ch.is_active ? 'text-emerald-300 border-emerald-500/30' : 'text-slate-500 border-slate-700'}`}>{ch.is_active ? 'Active' : 'Disabled'}</button>
+                        <button onClick={() => deleteForceSubChannel(ch)} className="px-3 py-1.5 rounded-lg text-xs text-rose-300 border border-rose-500/20 hover:bg-rose-500/10">Remove</button>
+                      </div>
+                    </div>
+                    {ch.request_mode && <div className="mt-3 p-3 rounded-lg bg-amber-500/5 border border-amber-500/10 text-xs text-amber-200">Users will see the join-request link. They remain blocked until the channel admin approves the request; <b>Check Membership</b> then verifies their approved membership.</div>}
+                  </div>
+                ))}
+              </div>
+            </div>
           </div>
         )}
 
