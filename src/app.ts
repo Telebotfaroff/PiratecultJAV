@@ -234,10 +234,18 @@ export function createApp(): express.Express {
     }
   });
 
-  // Public image proxy endpoint: bypasses ISP domain filtering and hotlink referer checks
+  // Public image proxy endpoint. Only known public image hosts are allowed.
+  // This prevents the endpoint from becoming an open SSRF proxy.
   app.get('/api/proxy/image', async (req: Request, res: Response) => {
+    const ALLOWED_IMAGE_HOSTS = [
+      'pics.dmm.co.jp',
+      'www.javtiful.com',
+      'javtiful.com',
+    ];
+    const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
     try {
-      const rawUrl = req.query.url as string;
+      const rawUrl = typeof req.query.url === 'string' ? req.query.url : '';
       if (!rawUrl) {
         return res.status(400).send('Missing url parameter');
       }
@@ -249,41 +257,71 @@ export function createApp(): express.Express {
         return res.status(400).send('Invalid url parameter');
       }
 
-      if (!/^https?:$/i.test(parsed.protocol)) {
-        return res.status(400).send('Invalid protocol');
+      if (parsed.protocol !== 'https:') {
+        return res.status(400).send('Only HTTPS image URLs are allowed');
+      }
+
+      const hostname = parsed.hostname.toLowerCase().replace(/\\.$/, '');
+      const allowed = ALLOWED_IMAGE_HOSTS.some(
+        host => hostname === host || hostname.endsWith('.' + host)
+      );
+
+      if (!allowed) {
+        return res.status(403).send('Image host is not allowed');
+      }
+
+      // Prevent credentials and unusual URL forms from being used against the proxy.
+      if (parsed.username || parsed.password || parsed.port) {
+        return res.status(400).send('Invalid image URL');
       }
 
       const controller = new AbortController();
       const timeoutId = setTimeout(() => controller.abort(), 9000);
 
-      const upstream = await fetch(parsed.toString(), {
-        signal: controller.signal,
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-          'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8',
-        },
-      });
-
-      clearTimeout(timeoutId);
+      let upstream: Response;
+      try {
+        upstream = await fetch(parsed.toString(), {
+          redirect: 'follow',
+          signal: controller.signal,
+          headers: {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.9',
+          },
+        });
+      } finally {
+        clearTimeout(timeoutId);
+      }
 
       if (!upstream.ok) {
         return res.status(upstream.status).send(`Upstream returned ${upstream.status}`);
       }
 
-      // If upstream redirected to a "now_printing" placeholder image, treat as not found so fallback fires
       if (upstream.url && upstream.url.includes('now_printing')) {
         return res.status(404).send('Placeholder image');
       }
 
-      const contentType = upstream.headers.get('content-type') || 'image/jpeg';
+      const contentType = (upstream.headers.get('content-type') || '').split(';', 1)[0].trim().toLowerCase();
+      if (!contentType.startsWith('image/')) {
+        return res.status(415).send('Upstream response is not an image');
+      }
+
+      const declaredLength = Number(upstream.headers.get('content-length') || '0');
+      if (declaredLength > MAX_IMAGE_BYTES) {
+        return res.status(413).send('Image is too large');
+      }
+
+      const body = await upstream.arrayBuffer();
+      if (body.byteLength > MAX_IMAGE_BYTES) {
+        return res.status(413).send('Image is too large');
+      }
+
       res.setHeader('Content-Type', contentType);
       res.setHeader('Cache-Control', 'public, max-age=86400, s-maxage=86400, stale-while-revalidate=604800');
-
-      const arrayBuffer = await upstream.arrayBuffer();
-      res.send(Buffer.from(arrayBuffer));
+      res.setHeader('X-Content-Type-Options', 'nosniff');
+      return res.send(Buffer.from(body));
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      res.status(502).send(`Proxy fetch failed: ${errMsg}`);
+      return res.status(502).send(`Proxy fetch failed: ${errMsg}`);
     }
   });
 
