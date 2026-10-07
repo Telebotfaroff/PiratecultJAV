@@ -12,7 +12,7 @@ export interface SendToDumpResult {
 export async function sendDumpVideoToUser(
   bot: Telegraf,
   targetChatId: number | string,
-  dumpChatId: string,
+  dumpChatId: string | number,
   videoMessageId: number,
   caption?: string
 ): Promise<boolean> {

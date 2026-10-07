@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes } from '../services/code.ts';
-import { searchVideos, getVideoById, upsertVideoFromProvider, countVideos } from '../services/videos.ts';
+import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos } from '../services/videos.ts';
 import { createIndexJob, countJobs } from '../services/indexJobs.ts';
 import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
 import { checkUserForceSub } from '../services/forceSub.ts';
@@ -66,7 +66,7 @@ function createBot(token: string): Telegraf {
     const payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
 
     if (payload) {
-      return handleSearchQuery(ctx, payload, 0);
+      return deliverVideoToUser(bot, ctx, payload);
     }
 
     const welcome = `👋 *Welcome to PiratecultJAV Bot*\\n\\nSend any JAV code (e.g. \`ADN-001\`, \`STAR-765\`, \`JUR-270\`) or keyword to search the catalog.\\n\\nType your code below:`;
@@ -333,45 +333,9 @@ function createBot(token: string): Telegraf {
   });
   // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
-    const videoId = ctx.match[1];
+    const identifier = ctx.match[1];
     await ctx.answerCbQuery('Fetching video...');
-
-    // Verify force-sub before delivering
-    if (ctx.from) {
-      const forceSub = await checkUserForceSub(bot, ctx.from.id);
-      if (!forceSub.passed) {
-        const buttons: any[] = forceSub.missingChannels.map(ch =>
-          Markup.button.url(`Join ${ch.title}`, ch.invite_link || `https://t.me/${ch.channel_id.replace('@', '')}`)
-        );
-        buttons.push(Markup.button.callback('🔄 Check Membership', `download:${videoId}`));
-        return ctx.reply(
-          '⚠️ Please join our channels to download videos:',
-          Markup.inlineKeyboard(buttons.map(b => [b]))
-        );
-      }
-    }
-
-    const video = await getVideoById(videoId);
-    if (!video) {
-      return ctx.reply('Sorry, this video record was not found.');
-    }
-
-    if (video.status !== 'available') {
-      return ctx.reply(`This video is currently marked as ${video.status}.`);
-    }
-
-    try {
-      await sendDumpVideoToUser(
-        bot,
-        ctx.chat!.id,
-        video.dump_chat_id,
-        video.video_message_id,
-        `🎬 *${video.code}* - ${video.title}`
-      );
-    } catch (err: unknown) {
-      const errMsg = err instanceof Error ? err.message : String(err);
-      return ctx.reply(`Failed retrieving video from storage: ${errMsg}`);
-    }
+    return deliverVideoToUser(bot, ctx, identifier);
   });
 
   // 9. Force-sub membership recheck
@@ -598,6 +562,74 @@ export function getBot(): Telegraf | null {
   return botInstance;
 }
 
+
+async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
+  try {
+    const rawCode = identifier.trim();
+    const norm = normalizeCode(rawCode);
+
+    // 1. Try finding video by exact code or normalized code or database ID
+    let video = await getVideoByCode(rawCode);
+    if (!video && norm) {
+      video = await getVideoByCode(norm);
+    }
+    if (!video) {
+      video = await getVideoById(rawCode);
+    }
+
+    // 2. If not found by direct lookup, search catalog
+    if (!video) {
+      const { videos } = await searchVideos(norm || rawCode, 5, 0);
+      if (videos.length === 1) {
+        video = videos[0];
+      } else if (videos.length > 1) {
+        return handleSearchQuery(ctx, rawCode, 0);
+      } else {
+        return ctx.reply(`❌ Video with code "${rawCode}" was not found in catalog.`);
+      }
+    }
+
+    if (video.status !== 'available') {
+      return ctx.reply(`⚠️ Video *${video.code}* is currently marked as ${video.status}. Please check back later.`, {
+        parse_mode: 'Markdown',
+      });
+    }
+
+    // 3. Force-sub check
+    if (ctx.from) {
+      const forceSub = await checkUserForceSub(bot, ctx.from.id);
+      if (!forceSub.passed) {
+        const buttons: any[] = forceSub.missingChannels.map(ch =>
+          Markup.button.url(
+            ch.request_mode ? `📨 Request to Join ${ch.title}` : `Join ${ch.title}`,
+            ch.invite_link || `https://t.me/${ch.channel_id.replace('@', '')}`
+          )
+        );
+        buttons.push(Markup.button.callback('🔄 Get Video', `download:${video.id}`));
+        return ctx.reply(
+          `⚠️ *Access Required*\nPlease join our channel(s) below to receive *${video.code}*:`,
+          {
+            parse_mode: 'Markdown',
+            ...Markup.inlineKeyboard(buttons.map(b => [b])),
+          }
+        );
+      }
+    }
+
+    // 4. Directly deliver the stored video to the user
+    await sendDumpVideoToUser(
+      bot,
+      ctx.chat!.id,
+      video.dump_chat_id,
+      video.video_message_id,
+      `🎬 *${video.code}* - ${video.title}`
+    );
+  } catch (err: unknown) {
+    const errMsg = err instanceof Error ? err.message : String(err);
+    console.error(`[TelegramBot] Failed direct video delivery for ${identifier}:`, errMsg);
+    return ctx.reply(`⚠️ Failed retrieving video from storage: ${errMsg}`);
+  }
+}
 
 async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   const pageSize = 5;
