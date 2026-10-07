@@ -54,6 +54,7 @@ CREATE TABLE IF NOT EXISTS index_jobs (
     status TEXT NOT NULL DEFAULT 'queued' CHECK (status IN ('queued', 'processing', 'completed', 'failed')),
     attempts INT DEFAULT 0,
     error TEXT,
+    next_attempt_at TIMESTAMPTZ,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
     CONSTRAINT uq_dump_video UNIQUE (dump_chat_id, video_message_id)
@@ -61,6 +62,10 @@ CREATE TABLE IF NOT EXISTS index_jobs (
 
 CREATE INDEX IF NOT EXISTS idx_index_jobs_status ON index_jobs (status, created_at ASC);
 CREATE INDEX IF NOT EXISTS idx_index_jobs_code ON index_jobs (code);
+CREATE INDEX IF NOT EXISTS idx_index_jobs_next_attempt ON index_jobs (next_attempt_at) WHERE status = 'queued';
+
+-- Backwards-compatible upgrade for databases created before retry scheduling was added.
+ALTER TABLE index_jobs ADD COLUMN IF NOT EXISTS next_attempt_at TIMESTAMPTZ;
 
 -- 5. Admin Sessions Table
 CREATE TABLE IF NOT EXISTS admin_sessions (
@@ -132,6 +137,7 @@ BEGIN
     INTO claimed_record
     FROM index_jobs
     WHERE status = 'queued'
+      AND (next_attempt_at IS NULL OR next_attempt_at <= NOW())
     ORDER BY id ASC
     FOR UPDATE SKIP LOCKED
     LIMIT 1;
@@ -139,6 +145,7 @@ BEGIN
     IF FOUND THEN
         UPDATE index_jobs
         SET status = 'processing',
+            next_attempt_at = NULL,
             attempts = attempts + 1,
             updated_at = NOW()
         WHERE id = claimed_record.id
