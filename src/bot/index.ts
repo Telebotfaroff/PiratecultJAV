@@ -495,22 +495,6 @@ function createBot(token: string): Telegraf {
   // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
     const identifier = ctx.match[1];
-    if (ctx.from && !isAdmin(ctx.from.id)) {
-      try {
-        const allowance = await consumeVideoDownload(ctx.from.id);
-        if (!allowance.allowed) {
-          const planText = allowance.plan === 'semi_premium' ? 'Semi Premium (40/day)' : 'Free (20/day)';
-          await ctx.answerCbQuery('Daily limit reached.', { show_alert: true });
-          return ctx.reply(
-            `🚫 <b>Daily video limit reached</b>\\n\\nYour plan: <b>${planText}</b>\\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
-            { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
-          );
-        }
-      } catch (err) {
-        console.error('[Quota] Failed:', err);
-        return ctx.reply('⚠️ Could not verify your daily download limit. Please try again.');
-      }
-    }
     await ctx.answerCbQuery('Fetching video...');
     return deliverVideoToUser(bot, ctx, identifier);
   });
@@ -1033,7 +1017,25 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
       }
     }
 
-    // 4. Directly deliver the stored video to the user
+    // 4. Enforce the user's daily video allowance only after force-sub passes.
+    // Admins are exempt. This also covers direct /start CODE links.
+    if (ctx.from && !isAdmin(ctx.from.id)) {
+      try {
+        const allowance = await consumeVideoDownload(ctx.from.id);
+        if (!allowance.allowed) {
+          const planText = allowance.plan === 'semi_premium' ? 'Semi Premium (40/day)' : 'Free (20/day)';
+          return ctx.reply(
+            `🚫 <b>Daily video limit reached</b>\\n\\nYour plan: <b>${planText}</b>\\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
+            { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
+          );
+        }
+      } catch (err) {
+        console.error('[Quota] Failed:', err);
+        return ctx.reply('⚠️ Could not verify your daily download limit. Please try again.');
+      }
+    }
+
+    // 5. Directly deliver the stored video to the user
     await sendDumpVideoToUser(
       bot,
       ctx.chat!.id,
