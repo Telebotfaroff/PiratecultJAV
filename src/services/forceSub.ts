@@ -94,3 +94,59 @@ export async function checkUserForceSub(
     missingChannels: missing,
   };
 }
+
+
+export async function getAllForceSubChannels(): Promise<ForceSubChannel[]> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('force_sub_channels')
+    .select('*')
+    .order('created_at', { ascending: true });
+  if (error) throw new Error(`Failed fetching force-sub channels: ${error.message}`);
+  return (data as ForceSubChannel[]) || [];
+}
+
+export async function upsertForceSubChannel(params: {
+  channelId: string;
+  title: string;
+  inviteLink?: string | null;
+  requestMode?: boolean;
+  isActive?: boolean;
+}): Promise<ForceSubChannel> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('force_sub_channels')
+    .upsert({
+      channel_id: params.channelId.trim(),
+      title: params.title.trim(),
+      invite_link: params.inviteLink?.trim() || null,
+      request_mode: Boolean(params.requestMode),
+      is_active: params.isActive !== false,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: 'channel_id' })
+    .select('*')
+    .single();
+  if (error) throw new Error(`Failed saving force-sub channel: ${error.message}`);
+  return data as ForceSubChannel;
+}
+
+export async function updateForceSubChannel(
+  id: string,
+  updates: Partial<Pick<ForceSubChannel, 'title' | 'invite_link' | 'request_mode' | 'is_active'>>
+): Promise<ForceSubChannel> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('force_sub_channels')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw new Error(`Failed updating force-sub channel: ${error.message}`);
+  return data as ForceSubChannel;
+}
+
+export async function deleteForceSubChannel(id: string): Promise<void> {
+  const supabase = getSupabase();
+  const { error } = await supabase.from('force_sub_channels').delete().eq('id', id);
+  if (error) throw new Error(`Failed deleting force-sub channel: ${error.message}`);
+}
