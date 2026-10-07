@@ -285,6 +285,30 @@ function createBot(token: string): Telegraf {
     return showForceSubAdminMenu(ctx);
   });
 
+  bot.action('settings:forcesub:add', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await setAdminSession(ctx.from.id, 'force_sub_add', 'awaiting_channel');
+    await ctx.answerCbQuery();
+    return ctx.reply('➕ Send: <code>channel_id | title | invite_link | request:true</code>', { parse_mode: 'HTML' });
+  });
+
+  bot.action(/^settings:forcesub:toggle-channel:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const channels = await getAllForceSubChannels();
+    const channel = channels.find(ch => ch.id === ctx.match[1]);
+    if (!channel) return ctx.answerCbQuery('Channel not found.', { show_alert: true });
+    await updateForceSubChannel(channel.id, { is_active: !channel.is_active });
+    await ctx.answerCbQuery(channel.is_active ? 'Disabled.' : 'Enabled.');
+    return showForceSubAdminMenu(ctx);
+  });
+
+  bot.action(/^settings:forcesub:delete:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await deleteForceSubChannel(ctx.match[1]);
+    await ctx.answerCbQuery('Deleted.');
+    return showForceSubAdminMenu(ctx);
+  });
+
   bot.action('settings:forcesub:toggle', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const current = await getSetting<boolean>('force_sub_enabled', false);
