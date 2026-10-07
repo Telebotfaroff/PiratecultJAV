@@ -1,6 +1,7 @@
 import type { Telegraf } from 'telegraf';
 import { config } from '../config.ts';
 import { getSetting } from './settings.ts';
+import { classifyTelegramError, withTelegramRetry } from './telegramErrors.ts';
 
 const DELETE_TIMER_KEY = 'delete_timer_seconds';
 const MAX_TIMER_SECONDS = 86400;
@@ -44,9 +45,20 @@ export function installMessageDeleteTimer(bot: Telegraf): void {
     if (seconds <= 0) return result;
 
     const timer = setTimeout(() => {
-      void Promise.allSettled(messageIds.map(messageId =>
-        originalCallApi('deleteMessage', { chat_id: chatId, message_id: messageId })
-      ));
+      void Promise.allSettled(messageIds.map(async messageId => {
+        try {
+          await withTelegramRetry(
+            () => originalCallApi('deleteMessage', { chat_id: chatId, message_id: messageId }),
+            { maxRetries: 1, label: `delete:${chatId}:${messageId}` },
+          );
+        } catch (error) {
+          const info = classifyTelegramError(error);
+          // Deleted/already-missing messages are expected and should stay silent.
+          if (info.kind !== 'not_found') {
+            console.warn(`[Telegram] auto-delete ${info.kind} for ${chatId}:${messageId}: ${info.message}`);
+          }
+        }
+      })
     }, seconds * 1000);
     timer.unref?.();
     return result;
