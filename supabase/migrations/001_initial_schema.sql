@@ -83,6 +83,7 @@ CREATE TABLE IF NOT EXISTS force_sub_channels (
     channel_id TEXT UNIQUE NOT NULL,
     title TEXT NOT NULL,
     invite_link TEXT,
+    request_mode BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW()
