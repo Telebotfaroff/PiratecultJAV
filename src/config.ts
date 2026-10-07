@@ -3,6 +3,8 @@ dotenv.config();
 
 export interface AppConfig {
   botToken: string;
+  backupBotToken: string;
+  activeBot: 'primary' | 'backup';
   supabaseUrl: string;
   supabaseSecretKey: string;
   dumpChatId: string;
@@ -23,6 +25,8 @@ const adminIds: number[] = rawAdminIds
 
 export const config: AppConfig = {
   botToken: process.env.BOT_TOKEN || '',
+  backupBotToken: process.env.BACKUP_BOT_TOKEN || '',
+  activeBot: process.env.ACTIVE_BOT === 'backup' ? 'backup' : 'primary',
   supabaseUrl: process.env.SUPABASE_URL || '',
   supabaseSecretKey: process.env.SUPABASE_SECRET_KEY || '',
   dumpChatId: process.env.DUMP_CHAT_ID || '-1004426377644',
@@ -54,8 +58,12 @@ export function validateConfig(): ConfigValidationResult {
   if (!config.supabaseSecretKey) {
     missing.push('SUPABASE_SECRET_KEY');
   }
-  if (!config.botToken) {
-    warnings.push('BOT_TOKEN (Telegram bot polling disabled until provided)');
+  if (!config.botToken && !config.backupBotToken) {
+    warnings.push('BOT_TOKEN / BACKUP_BOT_TOKEN (No Telegram bot token configured)');
+  } else if (!config.botToken) {
+    warnings.push('BOT_TOKEN (Primary bot token is missing; backup will be used)');
+  } else if (!config.backupBotToken) {
+    warnings.push('BACKUP_BOT_TOKEN (No automatic bot recovery configured)');
   }
   if (config.adminIds.length === 0) {
     warnings.push('ADMIN_IDS (No admin IDs configured)');
