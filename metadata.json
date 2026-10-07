@@ -1,0 +1,6 @@
+{
+  "name": "PiratecultJAV — Telegram JAV Indexing Bot & Console",
+  "description": "Production Telegram JAV metadata indexing bot and Web Admin console with Supabase PostgreSQL, Javtiful provider, atomic queue worker, and Telegram dump channel integration.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

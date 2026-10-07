@@ -1,0 +1,68 @@
+import path from 'path';
+import express from 'express';
+import { createApp } from './src/app.ts';
+import { config } from './src/config.ts';
+import { indexerWorker } from './src/workers/indexer.ts';
+import { startBotPolling } from './src/bot/index.ts';
+
+async function startServer() {
+  const app = createApp();
+  const port = config.port || 3000;
+  const isProd = process.env.NODE_ENV === 'production';
+
+  if (!isProd) {
+    // Mount Vite dev server in development
+    const fs = await import('fs');
+    const { createServer: createViteServer } = await import('vite');
+    const vite = await createViteServer({
+      server: {
+        middlewareMode: true,
+        allowedHosts: true,
+      },
+      appType: 'spa',
+    });
+    app.use(vite.middlewares);
+
+    // Serve transformed index.html for client-side routing
+    app.use('*', async (req, res, next) => {
+      const url = req.originalUrl;
+      try {
+        const indexPath = path.resolve(process.cwd(), 'index.html');
+        let template = fs.readFileSync(indexPath, 'utf-8');
+        template = await vite.transformIndexHtml(url, template);
+        res.status(200).set({ 'Content-Type': 'text/html' }).end(template);
+      } catch (e) {
+        vite.ssrFixStacktrace(e as Error);
+        next(e);
+      }
+    });
+  } else {
+    // Serve static frontend files in production
+    const distPath = path.resolve(process.cwd(), 'dist');
+    app.use(express.static(distPath));
+    app.get('*', (_req, res) => {
+      res.sendFile(path.resolve(distPath, 'index.html'));
+    });
+  }
+
+  // Start background services
+  indexerWorker.start();
+  
+  if (config.botToken) {
+    startBotPolling().catch(err => {
+      console.warn('[Server] Could not initialize Telegram polling:', err.message);
+    });
+  } else {
+    console.log('[Server] BOT_TOKEN not provided; Telegram bot polling inactive.');
+  }
+
+  app.listen(port, '0.0.0.0', () => {
+    console.log(`[PiratecultJAV] Server running on http://0.0.0.0:${port}`);
+    console.log(`[PiratecultJAV] Health check available at http://0.0.0.0:${port}/health`);
+  });
+}
+
+startServer().catch(err => {
+  console.error('[PiratecultJAV] Fatal startup error:', err);
+  process.exit(1);
+});
