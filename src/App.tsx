@@ -105,6 +105,15 @@ interface VideoRecord {
   updated_at?: string;
 }
 
+interface ForceSubChannel {
+  id: string;
+  channel_id: string;
+  title: string;
+  invite_link: string | null;
+  request_mode: boolean;
+  is_active: boolean;
+}
+
 interface ProviderTestResult {
   ok: boolean;
   code?: string;
@@ -122,7 +131,7 @@ interface ProviderTestResult {
   error?: string;
 }
 
-type TabType = 'overview' | 'queue' | 'provider' | 'simulator' | 'catalog' | 'schema';
+type TabType = 'overview' | 'queue' | 'provider' | 'simulator' | 'catalog' | 'force-sub' | 'schema';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<TabType>('overview');
@@ -186,6 +195,12 @@ export default function App() {
   const [catalogSearch, setCatalogSearch] = useState('');
   const [catalogLoading, setCatalogLoading] = useState(false);
   const [catalogTotal, setCatalogTotal] = useState(0);
+
+  // Force-sub state
+  const [forceSubChannels, setForceSubChannels] = useState<ForceSubChannel[]>([]);
+  const [forceSubLoading, setForceSubLoading] = useState(false);
+  const [forceSubForm, setForceSubForm] = useState({ channelId: '', title: '', inviteLink: '', requestMode: false, isActive: true });
+  const [forceSubSaving, setForceSubSaving] = useState(false);
 
   // Schema state
   const [schemaSql, setSchemaSql] = useState('');
@@ -251,6 +266,22 @@ export default function App() {
     }
   }, [catalogSearch]);
 
+  // Fetch force-sub channels
+  const fetchForceSubChannels = useCallback(async () => {
+    setForceSubLoading(true);
+    try {
+      const res = await apiFetch('/api/force-sub/channels');
+      if (res.ok) {
+        const data = await res.json();
+        setForceSubChannels(data.channels || []);
+      }
+    } catch (err) {
+      console.error('Failed fetching force-sub channels:', err);
+    } finally {
+      setForceSubLoading(false);
+    }
+  }, [apiFetch]);
+
   // Fetch schema
   const fetchSchema = useCallback(async () => {
     try {
@@ -276,6 +307,8 @@ export default function App() {
       fetchJobs();
     } else if (activeTab === 'catalog') {
       fetchCatalog();
+    } else if (activeTab === 'force-sub') {
+      fetchForceSubChannels();
     }
   }, [activeTab, fetchJobs, fetchCatalog]);
 
@@ -345,6 +378,45 @@ export default function App() {
     } finally {
       setSimLoading(false);
     }
+  };
+
+  const saveForceSubChannel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forceSubForm.channelId.trim() || !forceSubForm.title.trim()) return;
+    setForceSubSaving(true);
+    try {
+      const res = await apiFetch('/api/force-sub/channels', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(forceSubForm),
+      });
+      if (res.ok) {
+        setForceSubForm({ channelId: '', title: '', inviteLink: '', requestMode: false, isActive: true });
+        await fetchForceSubChannels();
+      }
+    } finally {
+      setForceSubSaving(false);
+    }
+  };
+
+  const updateForceSubChannel = async (channel: ForceSubChannel, patch: Partial<ForceSubChannel>) => {
+    const res = await apiFetch('/api/force-sub/channels/' + channel.id, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        ...(patch.request_mode !== undefined ? { requestMode: patch.request_mode } : {}),
+        ...(patch.is_active !== undefined ? { isActive: patch.is_active } : {}),
+        ...(patch.title !== undefined ? { title: patch.title } : {}),
+        ...(patch.invite_link !== undefined ? { inviteLink: patch.invite_link } : {}),
+      }),
+    });
+    if (res.ok) await fetchForceSubChannels();
+  };
+
+  const deleteForceSubChannel = async (channel: ForceSubChannel) => {
+    if (!window.confirm('Remove ' + channel.title + ' from force-sub?')) return;
+    const res = await apiFetch('/api/force-sub/channels/' + channel.id, { method: 'DELETE' });
+    if (res.ok) await fetchForceSubChannels();
   };
 
   const copyToClipboard = (text: string) => {
