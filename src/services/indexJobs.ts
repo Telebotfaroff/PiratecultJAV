@@ -11,6 +11,7 @@ export interface IndexJob {
   error: string | null;
   created_at?: string;
   updated_at?: string;
+  next_attempt_at?: string | null;
 }
 
 export interface CreateJobParams {
@@ -115,6 +116,7 @@ export async function claimNextJob(): Promise<IndexJob | null> {
     .from('index_jobs')
     .select('*')
     .eq('status', 'queued')
+    .or('next_attempt_at.is.null,next_attempt_at.lte.' + new Date().toISOString())
     .order('id', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -128,6 +130,7 @@ export async function claimNextJob(): Promise<IndexJob | null> {
     .from('index_jobs')
     .update({
       status: 'processing',
+      next_attempt_at: null,
       attempts: (queued.attempts || 0) + 1,
       updated_at: new Date().toISOString(),
     })
@@ -146,7 +149,8 @@ export async function claimNextJob(): Promise<IndexJob | null> {
 export async function updateJobStatus(
   jobId: number,
   status: 'queued' | 'processing' | 'completed' | 'failed',
-  errorMessage: string | null = null
+  errorMessage: string | null = null,
+  nextAttemptAt: string | null = null
 ): Promise<void> {
   const supabase = getSupabase();
 
@@ -155,6 +159,7 @@ export async function updateJobStatus(
     .update({
       status,
       error: errorMessage,
+      next_attempt_at: nextAttemptAt,
       updated_at: new Date().toISOString(),
     })
     .eq('id', jobId);
@@ -222,4 +227,29 @@ export async function countJobs(): Promise<{ queued: number; processing: number;
   }
 
   return counts;
+}
+
+
+/** Requeues jobs left in processing after a server crash or hard restart. */
+export async function recoverStaleJobs(staleAfterMs = 15 * 60 * 1000): Promise<number> {
+  const supabase = getSupabase();
+  const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+
+  const { data, error } = await supabase
+    .from('index_jobs')
+    .update({
+      status: 'queued',
+      error: 'Recovered stale processing job after worker restart/timeout',
+      next_attempt_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq('status', 'processing')
+    .lt('updated_at', cutoff)
+    .select('id');
+
+  if (error) {
+    throw new Error(`Failed recovering stale jobs: ${error.message}`);
+  }
+
+  return data?.length || 0;
 }
