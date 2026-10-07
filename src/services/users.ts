@@ -7,6 +7,12 @@ export interface UserRecord {
   first_name: string | null;
   last_name: string | null;
   is_blocked: boolean;
+  plan: 'free' | 'semi_premium' | 'premium';
+  daily_download_count: number;
+  daily_download_date: string;
+  unlimited_until: string | null;
+  referred_by: number | null;
+  referral_reward_claimed: boolean;
   created_at?: string;
   updated_at?: string;
 }
@@ -97,4 +103,54 @@ export async function getBroadcastUserIds(): Promise<number[]> {
     .eq('is_blocked', false);
   if (error) throw new Error(`Failed loading broadcast recipients: ${error.message}`);
   return (data || []).map(row => Number(row.telegram_user_id)).filter(Number.isFinite);
+}
+
+
+export interface DownloadAllowance {
+  allowed: boolean;
+  remaining: number;
+  plan: 'free' | 'semi_premium' | 'premium';
+  unlimited_until: string | null;
+}
+
+export async function getUser(telegramUserId: number): Promise<UserRecord | null> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.from('users').select('*')
+    .eq('telegram_user_id', telegramUserId).maybeSingle();
+  if (error || !data) return null;
+  return data as UserRecord;
+}
+
+export async function consumeVideoDownload(telegramUserId: number): Promise<DownloadAllowance> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('consume_video_download', { p_user_id: telegramUserId });
+  if (error) throw new Error(`Failed checking download allowance: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    allowed: Boolean(row?.allowed),
+    remaining: Number(row?.remaining ?? 0),
+    plan: (row?.plan || 'free') as DownloadAllowance['plan'],
+    unlimited_until: row?.unlimited_until || null,
+  };
+}
+
+export async function registerReferral(referrerId: number, referredId: number): Promise<{ success: boolean; unlimited_until: string | null }> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('register_referral', {
+    p_referrer: referrerId,
+    p_referred: referredId,
+  });
+  if (error) throw new Error(`Failed registering referral: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return { success: Boolean(row?.success), unlimited_until: row?.unlimited_until || null };
+}
+
+export async function setUserPlan(telegramUserId: number, plan: 'free' | 'semi_premium' | 'premium'): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('set_user_plan', {
+    p_user_id: telegramUserId,
+    p_plan: plan,
+  });
+  if (error) throw new Error(`Failed setting user plan: ${error.message}`);
+  return Boolean(data);
 }
