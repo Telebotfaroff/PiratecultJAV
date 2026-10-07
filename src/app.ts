@@ -283,6 +283,66 @@ export function createApp(): express.Express {
     }
   });
 
+  // Force-sub channel management API
+  app.get('/api/force-sub/channels', adminOnly, async (_req: Request, res: Response) => {
+    try {
+      const supabase = (await import('./database/supabase.ts')).getSupabase();
+      const { data, error } = await supabase.from('force_sub_channels').select('*').order('created_at', { ascending: true });
+      if (error) throw error;
+      res.json({ ok: true, channels: data || [] });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.post('/api/force-sub/channels', adminOnly, async (req: Request, res: Response) => {
+    try {
+      const { channelId, title, inviteLink, requestMode, isActive } = req.body || {};
+      if (!channelId || !title) return res.status(400).json({ ok: false, error: 'channelId and title are required' });
+      const supabase = (await import('./database/supabase.ts')).getSupabase();
+      const { data, error } = await supabase.from('force_sub_channels').upsert({
+        channel_id: String(channelId).trim(),
+        title: String(title).trim(),
+        invite_link: inviteLink ? String(inviteLink).trim() : null,
+        request_mode: Boolean(requestMode),
+        is_active: isActive !== false,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'channel_id' }).select('*').single();
+      if (error) throw error;
+      res.json({ ok: true, channel: data });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.patch('/api/force-sub/channels/:id', adminOnly, async (req: Request, res: Response) => {
+    try {
+      const { title, inviteLink, requestMode, isActive } = req.body || {};
+      const updates: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      if (title !== undefined) updates.title = String(title).trim();
+      if (inviteLink !== undefined) updates.invite_link = inviteLink ? String(inviteLink).trim() : null;
+      if (requestMode !== undefined) updates.request_mode = Boolean(requestMode);
+      if (isActive !== undefined) updates.is_active = Boolean(isActive);
+      const supabase = (await import('./database/supabase.ts')).getSupabase();
+      const { data, error } = await supabase.from('force_sub_channels').update(updates).eq('id', req.params.id).select('*').single();
+      if (error) throw error;
+      res.json({ ok: true, channel: data });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
+  app.delete('/api/force-sub/channels/:id', adminOnly, async (req: Request, res: Response) => {
+    try {
+      const supabase = (await import('./database/supabase.ts')).getSupabase();
+      const { error } = await supabase.from('force_sub_channels').delete().eq('id', req.params.id);
+      if (error) throw error;
+      res.json({ ok: true });
+    } catch (err: unknown) {
+      res.status(500).json({ ok: false, error: err instanceof Error ? err.message : String(err) });
+    }
+  });
+
   // Settings API
   app.get('/api/settings', adminOnly, async (_req: Request, res: Response) => {
     try {
