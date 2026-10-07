@@ -262,7 +262,7 @@ export default function App() {
     } catch (err) {
       console.error('Failed fetching schema:', err);
     }
-  }, []);
+  }, [apiFetch]);
 
   useEffect(() => {
     fetchStatus();
