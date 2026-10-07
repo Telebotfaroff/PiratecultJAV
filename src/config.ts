@@ -9,6 +9,8 @@ export interface AppConfig {
   adminIds: number[];
   javtifulBaseUrl: string;
   port: number;
+  adminApiKey: string;
+  adminSessionTtlMs: number;
 }
 
 const rawAdminIds = process.env.ADMIN_IDS || '';
@@ -27,6 +29,8 @@ export const config: AppConfig = {
   adminIds,
   javtifulBaseUrl: (process.env.JAVTIFUL_BASE_URL || 'https://javtiful.com').replace(/\/$/, ''),
   port: parseInt(process.env.PORT || '3000', 10),
+  adminApiKey: process.env.ADMIN_API_KEY || '',
+  adminSessionTtlMs: 12 * 60 * 60 * 1000,
 };
 
 export function isAdmin(telegramUserId: number | undefined): boolean {
@@ -58,6 +62,9 @@ export function validateConfig(): ConfigValidationResult {
   }
   if (!config.dumpChatId) {
     warnings.push('DUMP_CHAT_ID (Defaulting to -1004426377644)');
+  }
+  if (!config.adminApiKey) {
+    missing.push('ADMIN_API_KEY');
   }
 
   return {
