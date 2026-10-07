@@ -8,6 +8,9 @@ interface VideoRecord {
   metadata: {
     duration?: string | null;
     actresses?: string[];
+    studio?: string | null;
+    genres?: string[];
+    date?: string | null;
     thumbnailUrl?: string | null;
   };
 }
@@ -145,7 +148,18 @@ export default function App() {
                   <div className="p-3">
                     <h2 className="line-clamp-2 text-sm font-medium leading-5 text-slate-200" title={video.title}>{video.title || video.code}</h2>
                     {actresses.length > 0 && <p className="mt-1 line-clamp-1 text-xs text-slate-500">{actresses.join(', ')}</p>}
-                    {video.metadata?.duration && <p className="mt-2 text-[11px] text-slate-600">{video.metadata.duration}</p>}
+                    {video.metadata?.studio && <p className="mt-1 line-clamp-1 text-xs text-slate-500">Studio: {video.metadata.studio}</p>}
+                    <div className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-slate-600">
+                      {video.metadata?.duration && <span className="rounded bg-slate-800 px-1.5 py-0.5">{video.metadata.duration}</span>}
+                      {video.metadata?.date && <span className="rounded bg-slate-800 px-1.5 py-0.5">{video.metadata.date}</span>}
+                    </div>
+                    {(video.metadata?.genres || []).length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-1">
+                        {(video.metadata?.genres || []).slice(0, 3).map((genre) => (
+                          <span key={genre} className="rounded bg-indigo-950/60 px-1.5 py-0.5 text-[10px] text-indigo-300">{genre}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </article>
               );
