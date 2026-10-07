@@ -129,6 +129,7 @@ function VideoDetails({ id }: { id: string }) {
   const [botUrl, setBotUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [viewMode, setViewMode] = useState<'cover' | 'scene'>('cover');
 
   useEffect(() => {
     let cancelled = false;
@@ -160,8 +161,8 @@ function VideoDetails({ id }: { id: string }) {
       <div className="min-h-screen bg-slate-950 text-slate-100">
         <div className="mx-auto max-w-5xl px-4 py-10 sm:px-6">
           <div className="h-8 w-28 animate-pulse rounded bg-slate-800" />
-          <div className="mt-8 grid gap-8 md:grid-cols-[320px_1fr]">
-            <div className="aspect-[3/4] animate-pulse rounded-2xl bg-slate-900" />
+          <div className="mt-8 grid gap-8 md:grid-cols-[480px_1fr]">
+            <div className="aspect-video animate-pulse rounded-2xl bg-slate-900" />
             <div className="space-y-4"><div className="h-8 animate-pulse rounded bg-slate-900" /><div className="h-24 animate-pulse rounded bg-slate-900" /></div>
           </div>
         </div>
@@ -187,7 +188,6 @@ function VideoDetails({ id }: { id: string }) {
   const metadata = video.metadata || {};
   const thumbnail = metadata.thumbnailUrl || '';
   const hdCover = getHighResCoverUrl(video.code);
-  const [viewMode, setViewMode] = useState<'cover' | 'scene'>(hdCover ? 'cover' : 'scene');
   const actresses = metadata.actresses || [];
   const genres = metadata.genres || [];
 
