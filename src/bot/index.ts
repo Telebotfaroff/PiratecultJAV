@@ -1,7 +1,7 @@
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
-import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos } from '../services/videos.ts';
+import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs } from '../services/indexJobs.ts';
 import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
 import { checkUserForceSub } from '../services/forceSub.ts';
@@ -338,6 +338,109 @@ function createBot(token: string): Telegraf {
     return deliverVideoToUser(bot, ctx, identifier);
   });
 
+  // Admin video management callbacks
+  bot.action(/^admin:vid:edit:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return showAdminVideoEditMenu(ctx, ctx.match[1]);
+  });
+
+  bot.action(/^admin:vid:toggle_status:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const videoId = ctx.match[1];
+    const video = await getVideoById(videoId);
+    if (!video) return ctx.answerCbQuery('Video not found.');
+    const nextStatus = video.status === 'available' ? 'disabled' : 'available';
+    await updateVideoStatus(videoId, nextStatus);
+    await ctx.answerCbQuery(`Status set to ${nextStatus}.`);
+    return showAdminVideoEditMenu(ctx, videoId);
+  });
+
+  bot.action(/^admin:vid:set:(title|actresses|studio|duration):(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const field = ctx.match[1];
+    const videoId = ctx.match[2];
+    const video = await getVideoById(videoId);
+    if (!video) return ctx.reply('Video not found.');
+
+    await setAdminSession(ctx.from!.id, 'edit_video', field, { videoId: video.id, code: video.code });
+
+    let prompt = '';
+    if (field === 'title') {
+      prompt = `📝 <b>Send the new title for</b> <code>${escapeHtml(video.code)}</code>:\n\n<i>(Send /cancel to abort)</i>`;
+    } else if (field === 'actresses') {
+      prompt = `💃 <b>Send actress name(s) separated by commas</b> for <code>${escapeHtml(video.code)}</code>:\n<i>Example: Meguri, Ootsuki Hibiki</i>\n\n<i>(Send /cancel to abort)</i>`;
+    } else if (field === 'studio') {
+      prompt = `🏢 <b>Send the studio/maker name for</b> <code>${escapeHtml(video.code)}</code>:\n\n<i>(Send /cancel to abort)</i>`;
+    } else if (field === 'duration') {
+      prompt = `⏱ <b>Send video duration</b> (e.g. <code>02:15:30</code>) for <code>${escapeHtml(video.code)}</code>:\n\n<i>(Send /cancel to abort)</i>`;
+    }
+
+    return ctx.reply(prompt, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back to Menu', `admin:vid:edit:${videoId}`)]]),
+    });
+  });
+
+  bot.action(/^admin:vid:del_confirm:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const videoId = ctx.match[1];
+    const video = await getVideoById(videoId);
+    if (!video) return ctx.reply('Video not found.');
+
+    const prompt = [
+      `⚠️ <b>Delete Video Confirmation</b>`,
+      ``,
+      `Are you sure you want to delete this video?`,
+      `🏷️ <b>Code:</b> <code>${escapeHtml(video.code)}</code>`,
+      `📌 <b>Title:</b> <i>${escapeHtml(video.title)}</i>`,
+      ``,
+      `🚨 <i>This will permanently remove it from catalog and search!</i>`,
+    ].join('\n');
+
+    return ctx.editMessageText(prompt, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔴 Yes, Delete Video', `admin:vid:del_exec:${video.id}`)],
+        [Markup.button.callback('⬅️ Cancel', `admin:vid:edit:${video.id}`)],
+      ]),
+    }).catch(() => {
+      return ctx.reply(prompt, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔴 Yes, Delete Video', `admin:vid:del_exec:${video.id}`)],
+          [Markup.button.callback('⬅️ Cancel', `admin:vid:edit:${video.id}`)],
+        ]),
+      });
+    });
+  });
+
+  bot.action(/^admin:vid:del_exec:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const videoId = ctx.match[1];
+    const video = await getVideoById(videoId);
+    const code = video?.code || videoId;
+
+    try {
+      await deleteVideo(videoId);
+      await ctx.answerCbQuery('Deleted.');
+      return ctx.editMessageText(`🗑️ <b>Deleted:</b> Video <code>${escapeHtml(code)}</code> has been deleted from catalog.`, {
+        parse_mode: 'HTML',
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return ctx.reply(`❌ Delete failed: ${errMsg}`);
+    }
+  });
+
+  bot.action('admin:vid:cancel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery('Closed.');
+    return ctx.deleteMessage().catch(() => undefined);
+  });
+
   // 9. Force-sub membership recheck
   bot.action('check_sub', async (ctx) => {
     await ctx.answerCbQuery('Checking membership...');
@@ -421,7 +524,71 @@ function createBot(token: string): Telegraf {
     }
 
     const session = await getAdminSession(ctx.from.id);
-    if (!session || session.action !== 'post') {
+    if (!session) {
+      return next();
+    }
+
+    // Step 0: Admin editing video metadata
+    if (session.action === 'edit_video' && 'text' in ctx.message) {
+      const text = ctx.message.text.trim();
+      if (text === '/cancel') {
+        await clearAdminSession(ctx.from.id);
+        return ctx.reply('Edit cancelled.');
+      }
+
+      const videoId = String(session.payload.videoId);
+      const code = String(session.payload.code || 'Video');
+
+      try {
+        if (session.step === 'title') {
+          await updateVideoMetadata(videoId, { title: text });
+          await clearAdminSession(ctx.from.id);
+          return ctx.reply(
+            `✅ Title updated for <code>${escapeHtml(code)}</code>:\n<i>${escapeHtml(text)}</i>`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('✏️ Edit Menu', `admin:vid:edit:${videoId}`)]]),
+            }
+          );
+        } else if (session.step === 'actresses') {
+          const actresses = text.split(/[,/]/).map(s => s.trim()).filter(Boolean);
+          await updateVideoMetadata(videoId, { actresses });
+          await clearAdminSession(ctx.from.id);
+          return ctx.reply(
+            `✅ Actresses updated for <code>${escapeHtml(code)}</code>:\n<b>${escapeHtml(actresses.join(', '))}</b>`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('✏️ Edit Menu', `admin:vid:edit:${videoId}`)]]),
+            }
+          );
+        } else if (session.step === 'studio') {
+          await updateVideoMetadata(videoId, { studio: text });
+          await clearAdminSession(ctx.from.id);
+          return ctx.reply(
+            `✅ Studio updated for <code>${escapeHtml(code)}</code>:\n<b>${escapeHtml(text)}</b>`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('✏️ Edit Menu', `admin:vid:edit:${videoId}`)]]),
+            }
+          );
+        } else if (session.step === 'duration') {
+          await updateVideoMetadata(videoId, { duration: text });
+          await clearAdminSession(ctx.from.id);
+          return ctx.reply(
+            `✅ Duration updated for <code>${escapeHtml(code)}</code>:\n<b>${escapeHtml(text)}</b>`,
+            {
+              parse_mode: 'HTML',
+              ...Markup.inlineKeyboard([[Markup.button.callback('✏️ Edit Menu', `admin:vid:edit:${videoId}`)]]),
+            }
+          );
+        }
+      } catch (err: unknown) {
+        const errMsg = err instanceof Error ? err.message : String(err);
+        return ctx.reply(`❌ Update failed: ${errMsg}\nPlease try again or send /cancel.`);
+      }
+    }
+
+    if (session.action !== 'post') {
       return next();
     }
 
@@ -631,6 +798,51 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
   }
 }
 
+async function showAdminVideoEditMenu(ctx: any, videoId: string) {
+  const video = await getVideoById(videoId);
+  if (!video) {
+    return ctx.reply('Video not found.');
+  }
+
+  const actresses = cleanActressList(video.metadata?.actresses);
+  const text = [
+    `✏️ <b>Admin Edit:</b> <code>${escapeHtml(video.code)}</code>`,
+    ``,
+    `📌 <b>Title:</b> <i>${escapeHtml(video.title)}</i>`,
+    `💃 <b>Cast:</b> ${escapeHtml(actresses.join(', ') || 'None')}`,
+    `🏢 <b>Studio:</b> ${escapeHtml(video.metadata?.studio || 'None')}`,
+    `⏱ <b>Duration:</b> ${escapeHtml(video.metadata?.duration || 'None')}`,
+    `📊 <b>Status:</b> ${video.status === 'available' ? '🟢 Available' : '🔴 Disabled'}`,
+    ``,
+    `<i>Tap a button below to update:</i>`,
+  ].join('\n');
+
+  const keyboard = Markup.inlineKeyboard([
+    [
+      Markup.button.callback('📝 Edit Title', `admin:vid:set:title:${video.id}`),
+      Markup.button.callback('💃 Edit Cast', `admin:vid:set:actresses:${video.id}`),
+    ],
+    [
+      Markup.button.callback('🏢 Edit Studio', `admin:vid:set:studio:${video.id}`),
+      Markup.button.callback('⏱ Edit Duration', `admin:vid:set:duration:${video.id}`),
+    ],
+    [
+      Markup.button.callback(video.status === 'available' ? '🔴 Disable Video' : '🟢 Enable Video', `admin:vid:toggle_status:${video.id}`),
+      Markup.button.callback('🗑️ Delete Video', `admin:vid:del_confirm:${video.id}`),
+    ],
+    [
+      Markup.button.callback('❌ Close', 'admin:vid:cancel'),
+    ],
+  ]);
+
+  if (ctx.callbackQuery) {
+    return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard }).catch(() => {
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    });
+  }
+  return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+}
+
 function escapeHtml(value: unknown): string {
   if (value === null || value === undefined) return '';
   return String(value)
@@ -662,6 +874,8 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
 
     const keyboardButtons: any[] = [];
 
+    const userIsAdmin = Boolean(ctx.from && isAdmin(ctx.from.id));
+
     videos.forEach((v, idx) => {
       const num = offset + idx + 1;
       const displayTitle = cleanTitle(v.title, v.code);
@@ -688,7 +902,15 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
 
       html += `\n`;
 
-      keyboardButtons.push([Markup.button.callback(`🎬 Get ${v.code}`, `download:${v.id}`)]);
+      if (userIsAdmin) {
+        keyboardButtons.push([
+          Markup.button.callback(`🎬 Get ${v.code}`, `download:${v.id}`),
+          Markup.button.callback(`✏️ Edit`, `admin:vid:edit:${v.id}`),
+          Markup.button.callback(`🗑️ Delete`, `admin:vid:del_confirm:${v.id}`),
+        ]);
+      } else {
+        keyboardButtons.push([Markup.button.callback(`🎬 Get ${v.code}`, `download:${v.id}`)]);
+      }
     });
 
     html += `─────────────────────────\n`;

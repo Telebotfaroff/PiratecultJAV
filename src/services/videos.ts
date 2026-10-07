@@ -183,3 +183,17 @@ export async function deleteVideo(id: string): Promise<void> {
   const { error } = await supabase.from('videos').delete().eq('id', id);
   if (error) throw new Error('Database error deleting video: ' + error.message);
 }
+
+export async function updateVideoStatus(id: string, status: 'available' | 'disabled'): Promise<VideoRecord> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('videos')
+    .update({ status, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select()
+    .single();
+
+  if (error) throw new Error('Database error updating video status: ' + error.message);
+  return data as VideoRecord;
+}
+
