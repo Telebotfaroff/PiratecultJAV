@@ -146,7 +146,7 @@ export function getBot(): Telegraf | null {
         const buttons: any[] = forceSub.missingChannels.map(ch =>
           Markup.button.url(`Join ${ch.title}`, ch.invite_link || `https://t.me/${ch.channel_id.replace('@', '')}`)
         );
-        buttons.push(Markup.button.callback('✅ I have joined', `download:${videoId}`));
+        buttons.push(Markup.button.callback('🔄 Check Membership', `download:${videoId}`));
         return ctx.reply(
           '⚠️ Please join our channels to download videos:',
           Markup.inlineKeyboard(buttons.map(b => [b]))
@@ -189,7 +189,7 @@ export function getBot(): Telegraf | null {
 
     const buttons: any[] = forceSub.missingChannels.map(ch =>
       Markup.button.url(
-        `Join ${ch.title}`,
+        ch.request_mode ? `📨 Request to Join ${ch.title}` : `Join ${ch.title}`,
         ch.invite_link || `https://t.me/${ch.channel_id.replace('@', '')}`
       )
     );
