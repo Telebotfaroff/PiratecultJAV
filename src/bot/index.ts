@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes } from '../services/code.ts';
 import { searchVideos, getVideoById, upsertVideoFromProvider, countVideos } from '../services/videos.ts';
 import { createIndexJob, countJobs } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
 import { checkUserForceSub } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -132,6 +132,25 @@ export function getBot(): Telegraf | null {
 
     await setUserBlocked(targetId, false);
     return ctx.reply(`User ${targetId} has been unblocked.`);
+  });
+
+  // 7. Admin broadcast command (web dashboard is the primary UI)
+  bot.command('broadcast', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const text = ctx.message.text.replace(/^\\/broadcast\\s*/i, '').trim();
+    if (!text) return ctx.reply('Usage: /broadcast <message>');
+    const userIds = await getBroadcastUserIds();
+    let sent = 0;
+    let failed = 0;
+    for (let i = 0; i < userIds.length; i += 25) {
+      const batch = userIds.slice(i, i + 25);
+      await Promise.all(batch.map(async (userId) => {
+        try { await bot.telegram.sendMessage(userId, text); sent++; }
+        catch { failed++; }
+      }));
+      await new Promise(resolve => setTimeout(resolve, 1100));
+    }
+    return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
   });
 
   // 7. Video download callback query
