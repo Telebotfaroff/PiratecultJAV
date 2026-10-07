@@ -42,43 +42,6 @@ function createBot(token: string): Telegraf {
     } catch { /* ignore secondary reply failures */ }
   });
 
-  return bot;
-}
-
-export function getActiveBotRole(): 'primary' | 'backup' {
-  return activeBotRole;
-}
-
-let cachedBotUsername: string | null = null;
-
-export async function getBotUsername(): Promise<string | null> {
-  if (cachedBotUsername) return cachedBotUsername;
-  const bot = getBot();
-  if (!bot) return null;
-
-  try {
-    const me = await bot.telegram.getMe();
-    cachedBotUsername = me.username || null;
-    return cachedBotUsername;
-  } catch {
-    return null;
-  }
-}
-
-export function getBot(): Telegraf | null {
-  if (botInstance) return botInstance;
-
-  const role = availableRole(activeBotRole);
-  if (!role) return null;
-  activeBotRole = role;
-
-  const token = tokenForRole(role);
-  const bot = createBot(token);
-  botInstance = bot;
-
-  return bot;
-}
-
   // 1. User tracking & blocked filter middleware
   bot.use(async (ctx, next) => {
     if (ctx.from) {
@@ -100,7 +63,7 @@ export function getBot(): Telegraf | null {
   // 2. Start command
   bot.command('start', async (ctx) => {
     const startText = 'text' in ctx.message ? ctx.message.text : '';
-    const payload = startText.replace(/^\\/start(?:@\\w+)?\\s*/i, '').trim();
+    const payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
 
     if (payload) {
       return handleSearchQuery(ctx, payload, 0);
@@ -191,7 +154,7 @@ export function getBot(): Telegraf | null {
   // 7. Admin broadcast command (web dashboard is the primary UI)
   bot.command('broadcast', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const text = ctx.message.text.replace(/^\\/broadcast\\s*/i, '').trim();
+    const text = ctx.message.text.replace(/^\/broadcast\s*/i, '').trim();
     if (!text) return ctx.reply('Usage: /broadcast <message>');
     const userIds = await getBroadcastUserIds();
     let sent = 0;
@@ -599,9 +562,42 @@ export function getBot(): Telegraf | null {
     await handleSearchQuery(ctx, ctx.message.text, 0);
   });
 
-  botInstance = bot;
+  return bot;
+}
+
+export function getActiveBotRole(): 'primary' | 'backup' {
+  return activeBotRole;
+}
+
+let cachedBotUsername: string | null = null;
+
+export async function getBotUsername(): Promise<string | null> {
+  if (cachedBotUsername) return cachedBotUsername;
+  const bot = getBot();
+  if (!bot) return null;
+
+  try {
+    const me = await bot.telegram.getMe();
+    cachedBotUsername = me.username || null;
+    return cachedBotUsername;
+  } catch {
+    return null;
+  }
+}
+
+export function getBot(): Telegraf | null {
+  if (botInstance) return botInstance;
+
+  const role = availableRole(activeBotRole);
+  if (!role) return null;
+  activeBotRole = role;
+
+  const token = tokenForRole(role);
+  botInstance = createBot(token);
+
   return botInstance;
 }
+
 
 async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   const pageSize = 5;

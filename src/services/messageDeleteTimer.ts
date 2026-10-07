@@ -58,7 +58,7 @@ export function installMessageDeleteTimer(bot: Telegraf): void {
             console.warn(`[Telegram] auto-delete ${info.kind} for ${chatId}:${messageId}: ${info.message}`);
           }
         }
-      })
+      }));
     }, seconds * 1000);
     timer.unref?.();
     return result;
