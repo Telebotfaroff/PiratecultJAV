@@ -26,6 +26,39 @@ export interface CreateJobResult {
   reason?: string;
 }
 
+let hasNextAttemptAtColumn: boolean | null = null;
+
+/**
+ * Checks whether the live Supabase schema includes the optional 'next_attempt_at' column.
+ * Caches the result to prevent redundant schema checks while supporting gradual database migrations.
+ */
+async function checkHasNextAttemptAt(): Promise<boolean> {
+  if (hasNextAttemptAtColumn !== null) return hasNextAttemptAtColumn;
+
+  try {
+    const supabase = getSupabase();
+    const { error } = await supabase.from('index_jobs').select('next_attempt_at').limit(1);
+    if (!error) {
+      hasNextAttemptAtColumn = true;
+      return true;
+    }
+
+    if (
+      error.code === '42703' ||
+      error.code === 'PGRST204' ||
+      error.message?.includes('next_attempt_at')
+    ) {
+      hasNextAttemptAtColumn = false;
+      return false;
+    }
+  } catch {
+    hasNextAttemptAtColumn = false;
+    return false;
+  }
+
+  return false;
+}
+
 /**
  * Creates an index job with strict duplicate prevention.
  * The unique identity of a dump-channel media item is (dump_chat_id + video_message_id).
@@ -54,19 +87,25 @@ export async function createIndexJob(params: CreateJobParams): Promise<CreateJob
     };
   }
 
+  const hasNextAttempt = await checkHasNextAttemptAt();
+  const insertPayload: Record<string, unknown> = {
+    code: normalized,
+    dump_chat_id: String(params.dumpChatId),
+    video_message_id: params.videoMessageId,
+    status: 'queued',
+    attempts: 0,
+    error: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasNextAttempt) {
+    insertPayload.next_attempt_at = null;
+  }
+
   // 2. Insert new queued job
   const { data, error } = await supabase
     .from('index_jobs')
-    .insert({
-      code: normalized,
-      dump_chat_id: String(params.dumpChatId),
-      video_message_id: params.videoMessageId,
-      status: 'queued',
-      attempts: 0,
-      error: null,
-      next_attempt_at: null,
-      updated_at: new Date().toISOString()
-    })
+    .insert(insertPayload)
     .select()
     .single();
 
@@ -97,7 +136,7 @@ export async function createIndexJob(params: CreateJobParams): Promise<CreateJob
 /**
  * Atomically claims the next queued job using FOR UPDATE SKIP LOCKED.
  * If RPC 'claim_next_index_job' is available, invokes it.
- * Otherwise uses safe single-step fallback.
+ * Otherwise uses safe single-step fallback with adaptive column support.
  */
 export async function claimNextJob(): Promise<IndexJob | null> {
   const supabase = getSupabase();
@@ -112,12 +151,19 @@ export async function claimNextJob(): Promise<IndexJob | null> {
     // Fall back to client-side atomic step if RPC not yet run in SQL editor
   }
 
+  const hasNextAttempt = await checkHasNextAttemptAt();
+
   // Fallback: Find oldest queued job
-  const { data: queued, error: fetchError } = await supabase
+  let fetchQuery = supabase
     .from('index_jobs')
     .select('*')
-    .eq('status', 'queued')
-    .or('next_attempt_at.is.null,next_attempt_at.lte.' + new Date().toISOString())
+    .eq('status', 'queued');
+
+  if (hasNextAttempt) {
+    fetchQuery = fetchQuery.or(`next_attempt_at.is.null,next_attempt_at.lte.${new Date().toISOString()}`);
+  }
+
+  const { data: queued, error: fetchError } = await fetchQuery
     .order('id', { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -126,15 +172,20 @@ export async function claimNextJob(): Promise<IndexJob | null> {
     return null;
   }
 
+  const updatePayload: Record<string, unknown> = {
+    status: 'processing',
+    attempts: (queued.attempts || 0) + 1,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasNextAttempt) {
+    updatePayload.next_attempt_at = null;
+  }
+
   // Atomically transition status from queued -> processing
   const { data: claimed, error: updateError } = await supabase
     .from('index_jobs')
-    .update({
-      status: 'processing',
-      next_attempt_at: null,
-      attempts: (queued.attempts || 0) + 1,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', queued.id)
     .eq('status', 'queued') // Optimistic locking guard
     .select()
@@ -154,15 +205,21 @@ export async function updateJobStatus(
   nextAttemptAt: string | null = null
 ): Promise<void> {
   const supabase = getSupabase();
+  const hasNextAttempt = await checkHasNextAttemptAt();
+
+  const updatePayload: Record<string, unknown> = {
+    status,
+    error: errorMessage,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasNextAttempt) {
+    updatePayload.next_attempt_at = nextAttemptAt;
+  }
 
   const { error } = await supabase
     .from('index_jobs')
-    .update({
-      status,
-      error: errorMessage,
-      next_attempt_at: nextAttemptAt,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', jobId);
 
   if (error) {
@@ -172,15 +229,21 @@ export async function updateJobStatus(
 
 export async function retryJob(jobId: number): Promise<IndexJob> {
   const supabase = getSupabase();
+  const hasNextAttempt = await checkHasNextAttemptAt();
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'queued',
+    error: null,
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasNextAttempt) {
+    updatePayload.next_attempt_at = null;
+  }
 
   const { data, error } = await supabase
     .from('index_jobs')
-    .update({
-      status: 'queued',
-      error: null,
-      next_attempt_at: null,
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('id', jobId)
     .select()
     .single();
@@ -231,20 +294,25 @@ export async function countJobs(): Promise<{ queued: number; processing: number;
   return counts;
 }
 
-
 /** Requeues jobs left in processing after a server crash or hard restart. */
 export async function recoverStaleJobs(staleAfterMs = 15 * 60 * 1000): Promise<number> {
   const supabase = getSupabase();
   const cutoff = new Date(Date.now() - staleAfterMs).toISOString();
+  const hasNextAttempt = await checkHasNextAttemptAt();
+
+  const updatePayload: Record<string, unknown> = {
+    status: 'queued',
+    error: 'Recovered stale processing job after worker restart/timeout',
+    updated_at: new Date().toISOString(),
+  };
+
+  if (hasNextAttempt) {
+    updatePayload.next_attempt_at = new Date().toISOString();
+  }
 
   const { data, error } = await supabase
     .from('index_jobs')
-    .update({
-      status: 'queued',
-      error: 'Recovered stale processing job after worker restart/timeout',
-      next_attempt_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
-    })
+    .update(updatePayload)
     .eq('status', 'processing')
     .lt('updated_at', cutoff)
     .select('id');
