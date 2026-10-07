@@ -64,7 +64,8 @@ export async function createIndexJob(params: CreateJobParams): Promise<CreateJob
       status: 'queued',
       attempts: 0,
       error: null,
-      updated_at: new Date().toISOString(),
+      next_attempt_at: null,
+      updated_at: new Date().toISOString()
     })
     .select()
     .single();
