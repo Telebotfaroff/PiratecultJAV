@@ -10,6 +10,7 @@ import { javtifulProvider } from '../providers/javtiful/index.ts';
 import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/dump.ts';
 import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
+import { classifyTelegramError, withTelegramRetry } from '../services/telegramErrors.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
@@ -29,13 +30,13 @@ export function getBot(): Telegraf | null {
 
   // Global error handler to catch and report errors gracefully
   bot.catch((err: unknown, ctx) => {
-    const errMsg = err instanceof Error ? err.message : String(err);
-    console.error(`[TelegramBot] Handled bot error for update #${ctx?.update?.update_id || 'unknown'}:`, errMsg);
+    const info = classifyTelegramError(err);
+    console.error(`[TelegramBot] ${info.kind} on update #${ctx?.update?.update_id || 'unknown'}:`, info.message);
+    // Do not send another Telegram request when the original failure is itself a Telegram error.
+    if (info.kind === 'blocked' || info.kind === 'not_found' || info.kind === 'invalid_chat') return;
     try {
-      ctx.reply(`⚠️ An error occurred: ${errMsg}`).catch(() => {});
-    } catch {
-      // Ignore reply errors
-    }
+      void ctx.reply('⚠️ Telegram request failed. Please try again.').catch(() => {});
+    } catch { /* ignore secondary reply failures */ }
   });
 
   // 1. User tracking & blocked filter middleware
@@ -151,8 +152,16 @@ export function getBot(): Telegraf | null {
     for (let i = 0; i < userIds.length; i += 25) {
       const batch = userIds.slice(i, i + 25);
       await Promise.all(batch.map(async (userId) => {
-        try { await bot.telegram.sendMessage(userId, text); sent++; }
-        catch { failed++; }
+        try {
+          await withTelegramRetry(() => bot.telegram.sendMessage(userId, text), { label: `broadcast:${userId}` });
+          sent++;
+        } catch (error) {
+          const info = classifyTelegramError(error);
+          if (info.kind === 'blocked') {
+            try { await setUserBlocked(userId, true); } catch { /* keep broadcast running */ }
+          }
+          failed++;
+        }
       }));
       await new Promise(resolve => setTimeout(resolve, 1100));
     }
