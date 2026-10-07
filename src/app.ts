@@ -279,17 +279,42 @@ export function createApp(): express.Express {
       const timeoutId = setTimeout(() => controller.abort(), 9000);
 
       let upstream: Response;
-      try {
-        upstream = await fetch(parsed.toString(), {
-          redirect: 'follow',
-          signal: controller.signal,
-          headers: {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-            'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.9',
-          },
-        });
-      } finally {
-        clearTimeout(timeoutId);
+      let currentUrl = parsed.toString();
+
+      // Follow only a few redirects, validating every destination against the allowlist.
+      for (let redirectCount = 0; redirectCount <= 3; redirectCount++) {
+        const current = new URL(currentUrl);
+        const currentHost = current.hostname.toLowerCase().replace(/\\.$/, '');
+        const currentAllowed = ALLOWED_IMAGE_HOSTS.some(
+          host => currentHost === host || currentHost.endsWith('.' + host)
+        );
+        if (current.protocol !== 'https:' || !currentAllowed || current.username || current.password || current.port) {
+          return res.status(403).send('Image redirect target is not allowed');
+        }
+
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 9000);
+
+        try {
+          upstream = await fetch(current.toString(), {
+            redirect: 'manual',
+            signal: controller.signal,
+            headers: {
+              'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+              'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*;q=0.9',
+            },
+          });
+        } finally {
+          clearTimeout(timeoutId);
+        }
+
+        if (upstream.status < 300 || upstream.status >= 400) break;
+
+        const location = upstream.headers.get('location');
+        if (!location || redirectCount === 3) {
+          return res.status(502).send('Too many or invalid image redirects');
+        }
+        currentUrl = new URL(location, current).toString();
       }
 
       if (!upstream.ok) {
