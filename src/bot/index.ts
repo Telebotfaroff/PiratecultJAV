@@ -159,6 +159,70 @@ export function getBot(): Telegraf | null {
     return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
   });
 
+  // Admin settings menu
+  bot.command('settings', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+
+    const seconds = await getSetting<number>('delete_timer_seconds', 0);
+    return ctx.reply('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
+        [Markup.button.callback('❌ Close', 'settings:close')],
+      ]),
+    });
+  });
+
+  bot.action('settings:delete_timer', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const seconds = await getSetting<number>('delete_timer_seconds', 0);
+    return ctx.editMessageText('🗑️ *Auto-delete Timer*\n\nCurrent: *' + formatTimer(seconds) + '*\n\nChoose a timer:', {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('⏱ 10 seconds', 'settings:timer:10'), Markup.button.callback('⏱ 30 seconds', 'settings:timer:30')],
+        [Markup.button.callback('⏱ 1 minute', 'settings:timer:60'), Markup.button.callback('⏱ 5 minutes', 'settings:timer:300')],
+        [Markup.button.callback('⏱ 10 minutes', 'settings:timer:600'), Markup.button.callback('⏱ 30 minutes', 'settings:timer:1800')],
+        [Markup.button.callback('⏱ 1 hour', 'settings:timer:3600'), Markup.button.callback('⏱ 24 hours', 'settings:timer:86400')],
+        [Markup.button.callback('🔴 OFF', 'settings:timer:0')],
+        [Markup.button.callback('⬅️ Back', 'settings:main')],
+      ]),
+    });
+  });
+
+  bot.action(/^settings:timer:(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const seconds = Number.parseInt(ctx.match[1], 10);
+    await setSetting('delete_timer_seconds', seconds);
+    await ctx.answerCbQuery(seconds > 0 ? 'Timer updated.' : 'Timer disabled.');
+    return ctx.editMessageText('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
+        [Markup.button.callback('❌ Close', 'settings:close')],
+      ]),
+    });
+  });
+
+  bot.action('settings:main', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const seconds = await getSetting<number>('delete_timer_seconds', 0);
+    return ctx.editMessageText('⚙️ *Bot Settings*\n\n🗑️ *Auto-delete bot messages:* ' + formatTimer(seconds), {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
+        [Markup.button.callback('❌ Close', 'settings:close')],
+      ]),
+    });
+  });
+
+  bot.action('settings:close', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return ctx.deleteMessage().catch(() => undefined);
+  });
+
   // 7. Admin auto-delete timer
   bot.command('deletetimer', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
@@ -467,6 +531,14 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
     const errMsg = err instanceof Error ? err.message : String(err);
     return ctx.reply(`Search error: ${errMsg}`);
   }
+}
+
+function formatTimer(seconds: number): string {
+  if (!Number.isFinite(seconds) || seconds <= 0) return 'OFF';
+  if (seconds % 86400 === 0) return seconds / 86400 + ' day(s)';
+  if (seconds % 3600 === 0) return seconds / 3600 + ' hour(s)';
+  if (seconds % 60 === 0) return seconds / 60 + ' minute(s)';
+  return seconds + ' second(s)';
 }
 
 /**
