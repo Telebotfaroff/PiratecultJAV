@@ -8,6 +8,7 @@ export interface ForceSubChannel {
   title: string;
   invite_link: string | null;
   is_active: boolean;
+  request_mode: boolean;
 }
 
 export interface ForceSubCheckResult {
@@ -74,6 +75,9 @@ export async function checkUserForceSub(
   for (const ch of channels) {
     try {
       const member = await bot.telegram.getChatMember(ch.channel_id, userId);
+      // Request mode uses the same Telegram membership check: a pending join request
+      // remains `left`/unapproved, while an admin-approved request becomes `member`.
+      // This means users are only unlocked after the channel admin approves them.
       const isMember = ['creator', 'administrator', 'member', 'restricted'].includes(member.status);
       if (!isMember) {
         missing.push(ch);
