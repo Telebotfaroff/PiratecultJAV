@@ -48,12 +48,12 @@ async function startServer() {
   // Start background services
   indexerWorker.start();
   
-  if (config.botToken) {
+  if (config.botToken || config.backupBotToken) {
     startBotPolling().catch(err => {
       console.warn('[Server] Could not initialize Telegram polling:', err.message);
     });
   } else {
-    console.log('[Server] BOT_TOKEN not provided; Telegram bot polling inactive.');
+    console.log('[Server] BOT_TOKEN / BACKUP_BOT_TOKEN not provided; Telegram bot polling inactive.');
   }
 
   app.listen(port, '0.0.0.0', () => {
