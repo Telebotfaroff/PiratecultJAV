@@ -105,6 +105,8 @@ export async function upsertVideoFromProvider(params: UpsertVideoParams): Promis
       duration: params.metadata?.duration || null,
       date: params.metadata?.date || null,
       actresses: params.metadata?.actresses || [],
+      studio: params.metadata?.studio || null,
+      genres: params.metadata?.genres || [],
       sourceUrl: params.metadata?.sourceUrl || null,
       thumbnailUrl: params.metadata?.thumbnailUrl || null,
     },
