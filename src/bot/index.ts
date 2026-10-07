@@ -345,6 +345,39 @@ function createBot(token: string): Telegraf {
     return showAdminVideoEditMenu(ctx, ctx.match[1]);
   });
 
+  bot.action(/^admin:vid:refresh:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const videoId = ctx.match[1];
+    const video = await getVideoById(videoId);
+    if (!video) return ctx.answerCbQuery('Video not found.', { show_alert: true });
+
+    await ctx.answerCbQuery('Refreshing metadata...');
+    try {
+      const metadata = await javtifulProvider.getMetadata(video.code);
+      const updated = await updateVideoMetadata(video.id, {
+        title: metadata.title,
+        description: metadata.description,
+        duration: metadata.duration,
+        date: metadata.date,
+        actresses: metadata.actresses,
+        studio: metadata.studio,
+        genres: metadata.genres,
+      });
+
+      await showAdminVideoEditMenu(ctx, updated.id);
+      return ctx.reply(
+        `✅ Metadata refreshed for <code>${escapeHtml(updated.code)}</code>.\nThe record now uses fresh Javtiful data.`,
+        { parse_mode: 'HTML' },
+      );
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      return ctx.reply(
+        `❌ Could not refresh <code>${escapeHtml(video.code)}</code>.\n${escapeHtml(message)}`,
+        { parse_mode: 'HTML' },
+      );
+    }
+  });
+
   bot.action(/^admin:vid:toggle_status:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const videoId = ctx.match[1];
@@ -827,7 +860,10 @@ async function showAdminVideoEditMenu(ctx: any, videoId: string) {
       Markup.button.callback('⏱ Edit Duration', `admin:vid:set:duration:${video.id}`),
     ],
     [
+      Markup.button.callback('🔄 Refresh Metadata', `admin:vid:refresh:${video.id}`),
       Markup.button.callback(video.status === 'available' ? '🔴 Disable Video' : '🟢 Enable Video', `admin:vid:toggle_status:${video.id}`),
+    ],
+    [
       Markup.button.callback('🗑️ Delete Video', `admin:vid:del_confirm:${video.id}`),
     ],
     [
