@@ -1,5 +1,5 @@
 import { getSupabase } from '../database/supabase.ts';
-import { normalizeCode } from './code.ts';
+import { normalizeCode, cleanActressList } from './code.ts';
 import { JavMetadata } from '../providers/javtiful/parser.ts';
 
 export interface VideoRecord {
@@ -104,7 +104,7 @@ export async function upsertVideoFromProvider(params: UpsertVideoParams): Promis
     metadata: {
       duration: params.metadata?.duration || null,
       date: params.metadata?.date || null,
-      actresses: params.metadata?.actresses || [],
+      actresses: cleanActressList(params.metadata?.actresses),
       studio: params.metadata?.studio || null,
       genres: params.metadata?.genres || [],
       sourceUrl: params.metadata?.sourceUrl || null,
@@ -154,7 +154,7 @@ export async function updateVideoMetadata(
     ...currentMetadata,
     ...(updates.duration !== undefined ? { duration: updates.duration } : {}),
     ...(updates.date !== undefined ? { date: updates.date } : {}),
-    ...(updates.actresses !== undefined ? { actresses: updates.actresses } : {}),
+    ...(updates.actresses !== undefined ? { actresses: cleanActressList(updates.actresses) } : {}),
     ...(updates.studio !== undefined ? { studio: updates.studio } : {}),
     ...(updates.genres !== undefined ? { genres: updates.genres } : {}),
   };
