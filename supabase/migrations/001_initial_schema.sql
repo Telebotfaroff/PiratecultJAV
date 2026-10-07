@@ -111,7 +111,8 @@ VALUES
     ('force_sub_enabled', 'false'::jsonb),
     ('maintenance_mode', 'false'::jsonb),
     ('search_page_size', '5'::jsonb),
-    ('rate_limit_per_minute', '20'::jsonb)
+    ('rate_limit_per_minute', '20'::jsonb),
+    ('delete_timer_seconds', '0'::jsonb)
 ON CONFLICT (key) DO NOTHING;
 
 -- 9. Admin Actions (Audit Trail)
