@@ -80,7 +80,8 @@ export async function checkUserForceSub(
       }
     } catch (err) {
       console.warn(`Could not verify membership for user ${userId} in channel ${ch.channel_id}:`, err);
-      // If bot cannot check (e.g. not admin in that channel), do not block user
+      missing.push(ch);
+      // Fail closed when force-sub is enabled: an unverifiable membership must not bypass the gate.
     }
   }
 
