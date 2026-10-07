@@ -10,7 +10,7 @@ import { countUsers, getBroadcastUserIds } from './services/users.ts';
 import { javtifulProvider } from './providers/javtiful/index.ts';
 import { extractCodes, normalizeCode } from './services/code.ts';
 import { getAllSettings, setSetting } from './services/settings.ts';
-import { isBotActive, getBot } from './bot/index.ts';
+import { isBotActive, getBot, getBotUsername } from './bot/index.ts';
 import { indexerWorker } from './workers/indexer.ts';
 
 const adminSessions = new Map<string, number>();
@@ -190,6 +190,32 @@ export function createApp(): express.Express {
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ ok: false, error: errMsg });
+    }
+  });
+
+  // Public video details API
+  app.get('/api/videos/:id', async (req: Request, res: Response) => {
+    try {
+      const { getVideoById } = await import('./services/videos.ts');
+      const video = await getVideoById(req.params.id);
+
+      if (!video || video.status !== 'available') {
+        return res.status(404).json({ ok: false, error: 'Video not found' });
+      }
+
+      const botUsername = await getBotUsername();
+      const botUrl = botUsername
+        ? 'https://t.me/' + botUsername + '?start=' + encodeURIComponent(video.code)
+        : null;
+
+      return res.json({
+        ok: true,
+        video,
+        botUrl,
+      });
+    } catch (err: unknown) {
+      const errMsg = err instanceof Error ? err.message : String(err);
+      return res.status(500).json({ ok: false, error: errMsg });
     }
   });
 
