@@ -2,9 +2,9 @@ import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
-import { createIndexJob, countJobs } from '../services/indexJobs.ts';
+import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
 import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds } from '../services/users.ts';
-import { checkUserForceSub } from '../services/forceSub.ts';
+import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
 import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/dump.ts';
@@ -178,6 +178,62 @@ function createBot(token: string): Telegraf {
     return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
   });
 
+  bot.command('jobs', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    try {
+      const jobs = await getRecentJobs(undefined, 15);
+      if (!jobs.length) return ctx.reply('⚙️ No index jobs found.');
+      const lines = jobs.map(j => `#${j.id} · <code>${escapeHtml(j.code)}</code> · <b>${j.status}</b> · attempts ${j.attempts}${j.error ? '\\n   ❌ ' + escapeHtml(j.error.slice(0, 120)) : ''}`);
+      return ctx.reply('⚙️ <b>Recent Index Jobs</b>\\n\\n' + lines.join('\\n'), { parse_mode: 'HTML' });
+    } catch (err: unknown) {
+      return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
+    }
+  });
+
+  bot.command('retryjob', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const id = Number(ctx.message.text.split(/\\s+/)[1]);
+    if (!Number.isInteger(id)) return ctx.reply('Usage: /retryjob <job_id>');
+    try {
+      const job = await retryJob(id);
+      return ctx.reply(`🔄 Job #${job.id} for ${job.code} has been queued again.`);
+    } catch (err: unknown) {
+      return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
+    }
+  });
+
+  bot.command('test', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const code = normalizeCode(ctx.message.text.replace(/^\\/test\\s*/i, ''));
+    if (!code) return ctx.reply('Usage: /test <JAV-CODE>');
+    try {
+      const metadata = await javtifulProvider.getMetadata(code);
+      return ctx.reply(`🧪 <b>Javtiful Test</b>\\n\\n<b>Code:</b> <code>${escapeHtml(metadata.code)}</code>\\n<b>Title:</b> ${escapeHtml(metadata.title)}\\n<b>Actresses:</b> ${escapeHtml(metadata.actresses.join(', ') || 'N/A')}\\n<b>Studio:</b> ${escapeHtml(metadata.studio || 'N/A')}\\n<b>Duration:</b> ${escapeHtml(metadata.duration || 'N/A')}\\n<b>Date:</b> ${escapeHtml(metadata.date || 'N/A')}\\n<b>Genres:</b> ${escapeHtml(metadata.genres.join(', ') || 'N/A')}`, { parse_mode: 'HTML' });
+    } catch (err: unknown) {
+      return ctx.reply('❌ Provider test failed: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+    }
+  });
+
+  bot.command('addfs', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const parts = ctx.message.text.replace(/^\\/addfs\\s*/i, '').trim().split('|').map(v => v.trim());
+    if (parts.length < 2) return ctx.reply('Usage: /addfs channel_id | title | invite_link | request:true');
+    try {
+      const channel = await upsertForceSubChannel({ channelId: parts[0], title: parts[1], inviteLink: parts[2] || null, requestMode: /^(true|yes|1)$/i.test(parts[3] || ''), isActive: true });
+      return ctx.reply(`✅ Saved: ${channel.title} (${channel.channel_id})\\nRequest mode: ${channel.request_mode ? 'ON' : 'OFF'}`);
+    } catch (err: unknown) {
+      return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
+    }
+  });
+
+  bot.command('removefs', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const id = ctx.message.text.split(/\\s+/)[1];
+    if (!id) return ctx.reply('Usage: /removefs <channel_record_id>');
+    try { await deleteForceSubChannel(id); return ctx.reply('✅ Force-sub channel removed.'); }
+    catch (err: unknown) { return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err))); }
+  });
+
   // Admin command center
   bot.command('settings', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
@@ -218,23 +274,15 @@ function createBot(token: string): Telegraf {
   bot.action('settings:broadcast', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
-    return ctx.editMessageText('📣 *Broadcast*\n\nUse the web dashboard for the full broadcast composer, or use /broadcast followed by your message.', {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]),
-    });
+    await setAdminSession(ctx.from.id, 'broadcast', 'awaiting_message');
+    return ctx.editMessageText('📣 *Broadcast*\n\nSend the message to broadcast to all users.\n\nUse /cancel to abort.', { parse_mode: 'Markdown' });
   });
 
   bot.action('settings:forcesub', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     const enabled = await getSetting<boolean>('force_sub_enabled', false);
-    return ctx.editMessageText('🔒 *Force Subscribe*\n\nStatus: *' + (enabled ? 'ENABLED' : 'DISABLED') + '*\n\nUse the web dashboard to manage channels and request mode.', {
-      parse_mode: 'Markdown',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback(enabled ? '🔴 Disable' : '🟢 Enable', 'settings:forcesub:toggle')],
-        [Markup.button.callback('⬅️ Back', 'settings:main')],
-      ]),
-    });
+    return showForceSubAdminMenu(ctx);
   });
 
   bot.action('settings:forcesub:toggle', async (ctx) => {
@@ -621,6 +669,34 @@ function createBot(token: string): Telegraf {
       }
     }
 
+    if (session.action === 'broadcast' && session.step === 'awaiting_message' && 'text' in ctx.message) {
+      const message = ctx.message.text.trim();
+      if (!message) return ctx.reply('Send a non-empty message or /cancel.');
+      if (message.length > 4096) return ctx.reply('Message exceeds Telegram 4096-character limit.');
+      await clearAdminSession(ctx.from.id);
+      const userIds = await getBroadcastUserIds();
+      let sent = 0, failed = 0;
+      for (let i = 0; i < userIds.length; i += 25) {
+        const batch = userIds.slice(i, i + 25);
+        await Promise.all(batch.map(async userId => {
+          try { await withTelegramRetry(() => bot.telegram.sendMessage(userId, message), { label: 'broadcast:' + userId }); sent++; }
+          catch (error) { failed++; if (classifyTelegramError(error).kind === 'blocked') { try { await setUserBlocked(userId, true); } catch {} } }
+        }));
+        if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
+      }
+      return ctx.reply('📣 Broadcast finished.\\n\\n✅ Sent: ' + sent + '\\n❌ Failed: ' + failed);
+    }
+
+    if (session.action === 'force_sub_add' && session.step === 'awaiting_channel' && 'text' in ctx.message) {
+      const parts = ctx.message.text.trim().split('|').map(v => v.trim());
+      if (parts.length < 2) return ctx.reply('Format: channel_id | title | invite_link | request:true');
+      try {
+        const channel = await upsertForceSubChannel({ channelId: parts[0], title: parts[1], inviteLink: parts[2] || null, requestMode: /^(true|yes|1)$/i.test(parts[3] || ''), isActive: true });
+        await clearAdminSession(ctx.from.id);
+        return ctx.reply('✅ Force-sub channel saved: ' + channel.title);
+      } catch (err: unknown) { return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err))); }
+    }
+
     if (session.action !== 'post') {
       return next();
     }
@@ -988,6 +1064,25 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
     const errMsg = err instanceof Error ? err.message : String(err);
     return ctx.reply(`⚠️ Search error: ${errMsg}`);
   }
+}
+
+async function showForceSubAdminMenu(ctx: any) {
+  const enabled = await getSetting<boolean>('force_sub_enabled', false);
+  const channels = await getAllForceSubChannels();
+  const lines = ['🔒 <b>Force Subscribe</b>', '', 'Global: <b>' + (enabled ? 'ON' : 'OFF') + '</b>', ''];
+  if (!channels.length) lines.push('No channels configured.');
+  for (const ch of channels) lines.push((ch.is_active ? '🟢' : '🔴') + ' <b>' + escapeHtml(ch.title) + '</b> — <code>' + escapeHtml(ch.channel_id) + '</code> · Request: ' + (ch.request_mode ? 'ON' : 'OFF'));
+  const rows: any[] = [
+    [Markup.button.callback(enabled ? '🔴 Disable Global' : '🟢 Enable Global', 'settings:forcesub:toggle')],
+    [Markup.button.callback('➕ Add Channel', 'settings:forcesub:add')],
+  ];
+  for (const ch of channels) rows.push([
+    Markup.button.callback((ch.is_active ? '🔴 Disable ' : '🟢 Enable ') + ch.title.slice(0, 18), 'settings:forcesub:toggle-channel:' + ch.id),
+    Markup.button.callback('🗑️ Delete', 'settings:forcesub:delete:' + ch.id),
+  ]);
+  rows.push([Markup.button.callback('⬅️ Back', 'settings:main')]);
+  if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+  return ctx.reply(lines.join('\\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
 }
 
 async function showAdminSettings(ctx: any) {
