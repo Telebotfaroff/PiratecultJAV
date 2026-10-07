@@ -49,8 +49,20 @@ export function getActiveBotRole(): 'primary' | 'backup' {
   return activeBotRole;
 }
 
-export function getBotUsername(): string | null {
-  return null;
+let cachedBotUsername: string | null = null;
+
+export async function getBotUsername(): Promise<string | null> {
+  if (cachedBotUsername) return cachedBotUsername;
+  const bot = getBot();
+  if (!bot) return null;
+
+  try {
+    const me = await bot.telegram.getMe();
+    cachedBotUsername = me.username || null;
+    return cachedBotUsername;
+  } catch {
+    return null;
+  }
 }
 
 export function getBot(): Telegraf | null {
@@ -87,7 +99,14 @@ export function getBot(): Telegraf | null {
 
   // 2. Start command
   bot.command('start', async (ctx) => {
-    const welcome = `👋 *Welcome to PiratecultJAV Bot*\n\nSend any JAV code (e.g. \`ADN-001\`, \`STAR-765\`, \`JUR-270\`) or keyword to search the catalog.\n\nType your code below:`;
+    const startText = 'text' in ctx.message ? ctx.message.text : '';
+    const payload = startText.replace(/^\\/start(?:@\\w+)?\\s*/i, '').trim();
+
+    if (payload) {
+      return handleSearchQuery(ctx, payload, 0);
+    }
+
+    const welcome = `👋 *Welcome to PiratecultJAV Bot*\\n\\nSend any JAV code (e.g. \`ADN-001\`, \`STAR-765\`, \`JUR-270\`) or keyword to search the catalog.\\n\\nType your code below:`;
     return ctx.replyWithMarkdown(welcome);
   });
 
