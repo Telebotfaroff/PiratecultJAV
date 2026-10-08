@@ -11,6 +11,7 @@ import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/du
 import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
 import { classifyTelegramError, withTelegramRetry } from '../services/telegramErrors.ts';
+import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
@@ -179,7 +180,8 @@ bot.command('start', async (ctx) => {
     }
 
     if (payload) {
-      return deliverVideoToUser(bot, ctx, payload);
+      const isVideoDeepLink = /^v_[0-9a-f-]{8,64}$/i.test(payload);
+      return deliverVideoToUser(bot, ctx, isVideoDeepLink ? payload.slice(2) : payload, isVideoDeepLink ? 'deep_link' : 'unknown');
     }
 
     const welcome = `👋 *Welcome to PiratecultJAV Bot*\\n\\nSend any JAV code (e.g. \`ADN-001\`, \`STAR-765\`, \`JUR-270\`) or keyword to search the catalog.\\n\\nType your code below:`;
@@ -194,6 +196,20 @@ bot.command('start', async (ctx) => {
     return ctx.reply('Current operation canceled.');
   });
 
+  // Advanced delivery analytics for administrators.
+  bot.command('analytics', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const rawHours = Number(ctx.message.text.trim().split(/\\s+/)[1] || '24');
+    const hours = Number.isFinite(rawHours) ? Math.min(Math.max(Math.floor(rawHours), 1), 168) : 24;
+    try {
+      const stats = await getVideoDeliveryAnalytics(hours);
+      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\\n') : 'No successful deliveries yet.';
+      return ctx.reply('📊 <b>Delivery Analytics</b>\\n\\n⏱ Window: <b>' + hours + 'h</b>\\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\\n🎬 Attempts: <b>' + stats.attempts + '</b>\\n✅ Delivered: <b>' + stats.delivered + '</b>\\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\\n\\n🔥 <b>Top delivered videos</b>\\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:24')], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
+    } catch (err) {
+      console.error('[Analytics] Failed:', err);
+      return ctx.reply('⚠️ Could not load delivery analytics.');
+    }
+  });
   // 4. Admin stats command
   bot.command('stats', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) {
@@ -805,6 +821,16 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
+  bot.action(/^analytics:(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const hours = Math.min(Math.max(Number.parseInt(ctx.match[1], 10) || 24, 1), 168);
+    await ctx.answerCbQuery();
+    try {
+      const stats = await getVideoDeliveryAnalytics(hours);
+      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\\n') : 'No successful deliveries yet.';
+      return ctx.editMessageText('📊 <b>Delivery Analytics</b>\\n\\n⏱ Window: <b>' + hours + 'h</b>\\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\\n🎬 Attempts: <b>' + stats.attempts + '</b>\\n✅ Delivered: <b>' + stats.delivered + '</b>\\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\\n\\n🔥 <b>Top delivered videos</b>\\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:' + hours)], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
+    } catch { return ctx.answerCbQuery('Analytics unavailable.', { show_alert: true }); }
+  });
   bot.action('settings:stats', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
@@ -1380,8 +1406,9 @@ export function getBot(): Telegraf | null {
 }
 
 
-async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
+async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, source: 'deep_link' | 'search' | 'callback' | 'unknown' = 'unknown') {
   try {
+    await recordVideoDeliveryEvent({ eventType: 'attempt', telegramUserId: ctx.from?.id, source });
     const rawCode = identifier.trim();
     const norm = normalizeCode(rawCode);
 
@@ -1402,11 +1429,13 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
       } else if (videos.length > 1) {
         return handleSearchQuery(ctx, rawCode, 0);
       } else {
+        await recordVideoDeliveryEvent({ eventType: 'not_found', telegramUserId: ctx.from?.id, code: rawCode, source });
         return ctx.reply(`❌ Video with code "${rawCode}" was not found in catalog.`);
       }
     }
 
     if (video.status !== 'available') {
+      await recordVideoDeliveryEvent({ eventType: 'unavailable', telegramUserId: ctx.from?.id, videoId: video.id, code: video.code, source });
       return ctx.reply(`⚠️ Video *${video.code}* is currently marked as ${video.status}. Please check back later.`, {
         parse_mode: 'Markdown',
       });
@@ -1423,6 +1452,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
           )
         );
         buttons.push(Markup.button.callback('🔄 Get Video', `download:${video.id}`));
+        await recordVideoDeliveryEvent({ eventType: 'force_sub_block', telegramUserId: ctx.from?.id, videoId: video.id, code: video.code, source });
         return ctx.reply(
           `⚠️ *Access Required*\nPlease join our channel(s) below to receive *${video.code}*:`,
           {
@@ -1440,6 +1470,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
         const allowance = await consumeVideoDownload(ctx.from.id);
         if (!allowance.allowed) {
           const planText = allowance.plan === 'semi_premium' ? 'Semi Premium (40/day)' : 'Free (20/day)';
+          await recordVideoDeliveryEvent({ eventType: 'limit_block', telegramUserId: ctx.from?.id, videoId: video.id, code: video.code, source });
           return ctx.reply(
             `🚫 <b>Daily video limit reached</b>\n\nYour plan: <b>${planText}</b>\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
             { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
@@ -1460,6 +1491,8 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
       `🎬 *${video.code}* - ${video.title}`
     );
 
+    await recordVideoDeliveryEvent({ eventType: 'delivered', telegramUserId: ctx.from?.id, videoId: video.id, code: video.code, source, success: true });
+
     // Referral reward is granted only after the referred user actually receives
     // their first video. The database function is atomic and one-time.
     if (ctx.from && !isAdmin(ctx.from.id)) {
@@ -1477,6 +1510,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[TelegramBot] Failed direct video delivery for ${identifier}:`, errMsg);
+    await recordVideoDeliveryEvent({ eventType: 'delivery_failed', telegramUserId: ctx.from?.id, code: identifier, source, errorMessage: errMsg });
     return ctx.reply(`⚠️ Failed retrieving video from storage: ${errMsg}`);
   }
 }
