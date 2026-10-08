@@ -154,7 +154,8 @@ function createBot(token: string): Telegraf {
   });
 
   // 2. Start command
-    bot.command('dashboard', async (ctx) => sendUserPlan(ctx));\n  bot.command('leaderboard', async (ctx) => sendReferralLeaderboard(ctx));
+  bot.command('dashboard', async (ctx) => sendUserPlan(ctx));
+  bot.command('leaderboard', async (ctx) => sendReferralLeaderboard(ctx));
   bot.command('plan', async (ctx) => sendUserPlan(ctx));
 
 bot.command('start', async (ctx) => {
@@ -876,7 +877,13 @@ bot.command('start', async (ctx) => {
     return deliverVideoToUser(bot, ctx, identifier);
   });
 
-  bot.action('premium:store', async (ctx) => {\n    if (!ctx.from) return ctx.answerCbQuery();\n    await ctx.answerCbQuery();\n    return sendPremiumStore(ctx);\n  });\n\n  bot.action(/^premium:buy:(\\d+)$/, async (ctx) => {
+  bot.action('premium:store', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return sendPremiumStore(ctx);
+  });
+
+  bot.action(/^premium:buy:(\d+)$/, async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
     return sendPremiumInvoice(ctx, Number(ctx.match[1]));
