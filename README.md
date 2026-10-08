@@ -1,77 +1,255 @@
 # PiratecultJAV
 
-Production Telegram JAV metadata and video indexing bot with Supabase PostgreSQL, Javtiful metadata provider, and Telegram Dump Channel storage.
+Telegram bot and web service with Supabase PostgreSQL, Telegram storage, and a persistent Node.js server.
 
 ## Architecture
 
 ```
-                 ┌──────────────────────┐
-                 │      Javtiful        │
-                 │   Metadata Provider  │
-                 └──────────┬───────────┘
-                            │
-                            ▼
-                 ┌──────────────────────┐
-                 │ PiratecultJAV Bot    │
-                 │ Provider Layer       │
-                 └──────────┬───────────┘
-                            │
-                            ▼
-                 ┌──────────────────────┐
-                 │ Supabase PostgreSQL   │
-                 │ Metadata + References │
-                 └──────────┬───────────┘
-                            ▲
-                            │
-                 ┌──────────┴───────────┐
-                 │ Telegram Dump Channel│
-                 │ Videos + Thumbnails  │
-                 └──────────────────────┘
+Telegram Bot
+     |
+     v
+Node.js / Express
+     |
+     +---- Supabase PostgreSQL
+     |
+     +---- Telegram storage
+     |
+     +---- Background worker
 ```
 
-- **Telegram Dump Channel (`-1004426377644`)**: Real media storage layer for videos and thumbnails.
-- **Supabase PostgreSQL**: Relational metadata index storing message references (`dump_chat_id`, `video_message_id`), user accounts, force-subscription configs, and index jobs.
-- **Zero Video Stream URLs**: Strict security policy ensuring no temporary HLS, MP4, or expiring CDN URLs are captured or persisted.
-- **Atomic Job Queue**: Worker uses PostgreSQL `FOR UPDATE SKIP LOCKED` (`claim_next_index_job`) with unique idempotency on `(dump_chat_id, video_message_id)`.
+The application runs as a single persistent Node.js service. Supabase is used for PostgreSQL data and Telegram is used for bot communication and media storage.
+
+## Requirements
+
+- Node.js 22+
+- npm
+- Supabase project
+- Telegram bot token
+- Linux VPS
+- Git
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` or set in your hosting platform:
+Copy `.env.example` to `.env` and configure the values:
 
 ```env
-BOT_TOKEN=123456789:ABCdefGHIjklMNOpqrsTUVwxyz
+BOT_TOKEN=your_bot_token
 SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SECRET_KEY=ey...
-DUMP_CHAT_ID=-1004426377644
+SUPABASE_SECRET_KEY=your_secret_key
+DUMP_CHAT_ID=your_telegram_chat_id
 ADMIN_IDS=12345678,87654321
-JAVTIFUL_BASE_URL=https://javtiful.com
 PORT=3000
 ```
 
-## Database Migration
+Use the variables required by `.env.example` for the complete configuration.
 
-Run `supabase/migrations/001_initial_schema.sql` in your Supabase SQL Editor. It creates:
-- `users`: Tracked Telegram accounts with blocked state
-- `videos`: Indexed metadata with Telegram dump message pointers
-- `index_jobs`: Atomic queue with duplicate constraint
-- `force_sub_channels`: Channel subscription enforcement
-- `bot_settings`: Key/value configuration
-- `claim_next_index_job()`: Atomic PostgreSQL row-locking function
+Do not commit `.env` or expose `SUPABASE_SECRET_KEY` or bot tokens.
 
-## Quick Start
+## Database Setup
+
+1. Create a Supabase project.
+2. Open the Supabase SQL Editor.
+3. Apply the migrations from `supabase/migrations/` in order.
+4. Confirm the required tables and functions were created.
+5. Configure the environment variables.
+
+## Local Setup
 
 ```bash
-# Install dependencies
+git clone https://github.com/Telebotfaroff/Piratecultjav.git
+cd Piratecultjav
+
 npm install
+cp .env.example .env
 
-# Start development server & console
-npm run dev
-
-# Start production service
+npm run lint
 npm start
 ```
 
-Health check available at `/health` and readiness check at `/ready`:
-```json
-{ "ok": true, "service": "PiratecultJAV", "timestamp": "..." }
+The service exposes:
+
+- `/health` — process health
+- `/ready` — dependency readiness
+
+## VPS Deployment
+
+### 1. Create a VPS
+
+Use any Linux VPS running Ubuntu 22.04 or newer.
+
+Recommended minimum:
+
+- 2 CPU cores
+- 2 GB RAM
+- 20 GB SSD
+- Ubuntu 22.04+
+
+### 2. Install system packages
+
+```bash
+sudo apt update
+sudo apt install -y git curl
 ```
+
+Install Node.js 22:
+
+```bash
+curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+sudo apt install -y nodejs
+
+node -v
+npm -v
+```
+
+### 3. Clone the repository
+
+```bash
+cd /opt
+sudo git clone https://github.com/Telebotfaroff/Piratecultjav.git
+sudo chown -R $USER:$USER /opt/Piratecultjav
+cd /opt/Piratecultjav
+```
+
+### 4. Install dependencies
+
+```bash
+npm install
+```
+
+### 5. Configure environment
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+Add your production values and save the file.
+
+### 6. Test the application
+
+```bash
+npm run lint
+npm start
+```
+
+In another terminal:
+
+```curl http://127.0.0.1:3000/health`
+```
+
+Stop the test process with `Ctrl+C`.
+
+### 7. Create a systemd service
+
+Create the service:
+
+```bash
+sudo nano /etc/systemd/system/piratecultjav.service
+```
+
+Use:
+
+```ini
+[Unit]
+Description=PiratecultJAV Node Service
+After=network.target
+
+[Service]
+Type=simple
+User=%i
+WorkingDirectory=/opt/Piratecultjav
+Environment=NODE_ENV=production
+ExecStart=/usr/bin/npm start
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
+```
+
+If your VPS username is not suitable for `%i`, replace `User=%i` with your actual Linux username.
+
+Then enable and start it:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable piratecultjav
+sudo systemctl start piratecultjav
+```
+
+Check status:
+
+```bash
+sudo systemctl status piratecultjav
+```
+
+View logs:
+
+```bash
+sudo journalctl -u piratecultjav -f
+```
+
+### 8. Restart after an update
+
+```cd /opt/Piratecultjav
+git pull
+npm install
+npm run lint
+sudo systemctl restart piratecultjav
+```
+
+Check:
+
+```bash
+curl http://127.0.0.1:3000/ready
+```
+
+A successful readiness response indicates that the application and its critical dependencies are available.
+
+## Updating the VPS
+
+Use:
+
+```bash
+cd /opt/Piratecultjav
+git pull
+npm install
+npm run lint
+sudo systemctl restart piratecultjav
+```
+
+If the service fails after an update:
+
+```sudo systemctl status piratecultjav
+sudo journalctl -u piratecultjav -n 100 --no-pager
+```
+
+## Useful Commands
+
+```bash
+sudo systemctl start piratecultjav
+sudo systemctl stop piratecultjav
+sudo systemctl restart piratecultjav
+sudo systemctl status piratecultjav
+sudo journalctl -u piratecultjav -f
+```
+
+## Health Checks
+
+```bash
+curl http://127.0.0.1:3000/health
+curl http://127.0.0.1:3000/ready
+```
+
+`/health` confirms that the process is running.
+
+`/ready` checks the critical application dependencies and returns an unsuccessful status when the service is not ready.
+
+## Production Notes
+
+- Keep the VPS firewall enabled.
+- Keep secrets only in `.env`.
+- Never commit production credentials.
+- Use HTTPS if the service is exposed publicly.
+- Keep the Node.js runtime and system packages updated.
+- Use `systemd` so the service automatically restarts after crashes or VPS reboots.
