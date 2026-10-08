@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -1465,6 +1465,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
 
     // 4. Enforce the user's daily video allowance only after force-sub passes.
     // Admins are exempt. This also covers direct /start CODE links.
+    let quotaConsumed = false;
     if (ctx.from && !isAdmin(ctx.from.id)) {
       try {
         const allowance = await consumeVideoDownload(ctx.from.id);
@@ -1476,6 +1477,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
             { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
           );
         }
+        quotaConsumed = true;
       } catch (err) {
         console.error('[Quota] Failed:', err);
         return ctx.reply('⚠️ Could not verify your daily download limit. Please try again.');
@@ -1510,8 +1512,16 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[TelegramBot] Failed direct video delivery for ${identifier}:`, errMsg);
+    if (quotaConsumed && ctx.from && !isAdmin(ctx.from.id)) {
+      try {
+        const refunded = await refundVideoDownload(ctx.from.id);
+        if (!refunded) console.warn('[Quota] Could not refund consumed allowance after failed delivery.');
+      } catch (refundErr) {
+        console.error('[Quota] Refund failed after delivery error:', refundErr);
+      }
+    }
     await recordVideoDeliveryEvent({ eventType: 'delivery_failed', telegramUserId: ctx.from?.id, code: identifier, source, errorMessage: errMsg });
-    return ctx.reply(`⚠️ Failed retrieving video from storage: ${errMsg}`);
+    return ctx.reply('⚠️ Failed retrieving the requested item. Please try again later.');
   }
 }
 
