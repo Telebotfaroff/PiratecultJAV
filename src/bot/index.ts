@@ -500,10 +500,138 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
+  bot.command('admin', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    return showAdminSettings(ctx);
+  });
+
   bot.action('settings:main', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     return showAdminSettings(ctx);
+  });
+
+  bot.action('admin:overview', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return showAdminSettings(ctx);
+  });
+
+  bot.action('admin:users', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const users = await countUsers();
+    return ctx.editMessageText(
+      '👥 <b>User Management</b>\\n\\n' +
+      `Total users: <b>${users}</b>\\n\\n` +
+      'Use the commands below for direct actions:',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📣 Broadcast', 'settings:broadcast')],
+          [Markup.button.callback('⬅️ Back', 'settings:main')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('admin:monetization', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '💰 <b>Monetization</b>\\n\\n' +
+      `💎 Premium 7d: <b>${config.premium7Stars} ⭐</b>\\n` +
+      `💎 Premium 30d: <b>${config.premium30Stars} ⭐</b>\\n` +
+      `💎 Premium 90d: <b>${config.premium90Stars} ⭐</b>\\n\\n` +
+      '🎟️ Promo codes are managed with <code>/createpromo</code>.\\n' +
+      '👤 Manual access is managed with <code>/setplan</code>.',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🎟️ Promo Help', 'admin:promo_help')],
+          [Markup.button.callback('⬅️ Back', 'settings:main')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('admin:promo_help', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '🎟️ <b>Promo Management</b>\\n\\n' +
+      '<code>/createpromo CODE premium 30 100</code>\\n' +
+      '<code>/createpromo CODE semi_premium 7</code>\\n' +
+      '<code>/createpromo CODE unlimited 1 50</code>\\n\\n' +
+      'Optional expiry: add an ISO timestamp as the last argument.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:monetization')]]) },
+    );
+  });
+
+  bot.action('admin:content', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const jobs = await countJobs();
+    return ctx.editMessageText(
+      '🎬 <b>Content & Indexing</b>\\n\\n' +
+      'Use these tools to manage the catalog and indexing pipeline.',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('📝 Post Video', 'admin:post_help'), Markup.button.callback('🧪 Provider Test', 'admin:test_help')],
+          [Markup.button.callback('⚙️ Jobs', 'admin:jobs')],
+          [Markup.button.callback('⬅️ Back', 'settings:main')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('admin:post_help', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '📝 <b>Post Video</b>\\n\\nUse <code>/post</code>, enter the JAV code, then send/forward the video.\\n\\nThe bot fetches metadata, stores the video in the dump channel, and creates/updates the catalog record.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')]]) },
+    );
+  });
+
+  bot.action('admin:test_help', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '🧪 <b>Provider Test</b>\\n\\nUse <code>/test JAV-CODE</code> to fetch and display provider metadata without publishing a video.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')]]) },
+    );
+  });
+
+  bot.action('admin:jobs', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const jobs = await getRecentJobs(undefined, 10);
+    const lines = jobs.length
+      ? jobs.map(j => `#${j.id} · <code>${escapeHtml(j.code)}</code> · <b>${escapeHtml(j.status)}</b>`)
+      : ['No recent jobs.'];
+    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\\n\\n' + lines.join('\\n'), {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')], [Markup.button.callback('🔄 Refresh', 'admin:jobs')]]),
+    });
+  });
+
+  bot.action('admin:system', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '🛠️ <b>System</b>\\n\\nChoose a system control:',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
+          [Markup.button.callback('🛠️ Maintenance', 'settings:maintenance')],
+          [Markup.button.callback('🔄 Recovery', 'settings:recovery')],
+          [Markup.button.callback('⬅️ Back', 'settings:main')],
+        ]),
+      },
+    );
   });
 
   bot.action('settings:delete_timer', async (ctx) => {
@@ -1542,25 +1670,33 @@ async function showAdminSettings(ctx: any) {
     getSetting<boolean>('force_sub_enabled', false),
     getSetting<boolean>('maintenance_mode', false),
   ]);
+
   const text = [
-    '⚙️ *PIRATECULTJAV ADMIN*', '',
-    '👥 Users: *' + users + '*',
-    '🎬 Videos: *' + videos + '*',
-    '🟢 Bot: *Online* (' + activeBotRole.toUpperCase() + ')', '',
-    '🗑️ Auto Delete: *' + formatTimer(deleteTimer) + '*',
-    '🔒 Force Sub: *' + (forceSub ? 'ON' : 'OFF') + '*',
-    '🛠️ Maintenance: *' + (maintenance ? 'ON' : 'OFF') + '*', '',
-    '⚙️ Jobs: *' + jobs.queued + ' queued*',
-  ].join('\n');
+    '🛡️ <b>PIRATECULTJAV ADMIN CENTER</b>',
+    '',
+    '📈 <b>Quick Overview</b>',
+    `👥 Users: <b>${users}</b>  ·  🎬 Videos: <b>${videos}</b>`,
+    `⚙️ Jobs: <b>${jobs.queued}</b> queued · <b>${jobs.processing}</b> processing`,
+    `🤖 Bot: <b>ONLINE</b> · ${activeBotRole.toUpperCase()}`,
+    '',
+    '🔐 <b>Access</b>',
+    `🔒 Force Sub: <b>${forceSub ? 'ON' : 'OFF'}</b>`,
+    `🛠️ Maintenance: <b>${maintenance ? 'ON' : 'OFF'}</b>`,
+    `🗑️ Auto Delete: <b>${formatTimer(deleteTimer)}</b>`,
+    '',
+    'Choose an admin section:',
+  ].join('\\n');
+
   const keyboard = Markup.inlineKeyboard([
-    [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🗑️ Delete Timer', 'settings:delete_timer')],
-    [Markup.button.callback('🔒 Force Sub', 'settings:forcesub'), Markup.button.callback('🛠️ Maintenance', 'settings:maintenance')],
-    [Markup.button.callback('📊 Statistics', 'settings:stats'), Markup.button.callback('🔧 System', 'settings:system')],
-    [Markup.button.callback('🔄 Bot Recovery', 'settings:recovery')],
+    [Markup.button.callback('📊 Overview', 'admin:overview'), Markup.button.callback('👥 Users', 'admin:users')],
+    [Markup.button.callback('💰 Monetization', 'admin:monetization'), Markup.button.callback('🎬 Content', 'admin:content')],
+    [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🔒 Force Sub', 'settings:forcesub')],
+    [Markup.button.callback('🛠️ System', 'admin:system'), Markup.button.callback('🔄 Recovery', 'settings:recovery')],
     [Markup.button.callback('❌ Close', 'settings:close')],
   ]);
-  if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'Markdown', ...keyboard });
-  return ctx.reply(text, { parse_mode: 'Markdown', ...keyboard });
+
+  if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+  return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 }
 function formatTimer(seconds: number): string {
   if (!Number.isFinite(seconds) || seconds <= 0) return 'OFF';
