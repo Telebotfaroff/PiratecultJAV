@@ -291,6 +291,27 @@ export async function redeemPromoCode(userId: number, code: string): Promise<Pro
   };
 }
 
+export interface PremiumPaymentAdminRecord {
+  telegram_user_id: number;
+  duration_days: number;
+  amount_stars: number;
+  currency: string;
+  telegram_payment_charge_id: string;
+  created_at: string;
+}
+
+export async function listPremiumPayments(limit = 20): Promise<PremiumPaymentAdminRecord[]> {
+  const supabase = getSupabase();
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 50);
+  const { data, error } = await supabase
+    .from('premium_payments')
+    .select('telegram_user_id,duration_days,amount_stars,currency,telegram_payment_charge_id,created_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+  if (error) throw new Error(`Failed loading Premium payments: ${error.message}`);
+  return (data || []) as PremiumPaymentAdminRecord[];
+}
+
 export interface PromoAdminRecord {
   id: string;
   code: string;
