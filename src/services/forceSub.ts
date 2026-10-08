@@ -78,7 +78,10 @@ export async function checkUserForceSub(
       // Request mode uses the same Telegram membership check: a pending join request
       // remains `left`/unapproved, while an admin-approved request becomes `member`.
       // This means users are only unlocked after the channel admin approves them.
-      const isMember = ['creator', 'administrator', 'member', 'restricted'].includes(member.status);
+      const isMember = member.status === 'creator' ||
+        member.status === 'administrator' ||
+        member.status === 'member' ||
+        (member.status === 'restricted' && 'is_member' in member && Boolean(member.is_member));
       if (!isMember) {
         missing.push(ch);
       }
