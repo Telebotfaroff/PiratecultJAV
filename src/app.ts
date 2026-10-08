@@ -34,7 +34,8 @@ function publicRateLimit(req: Request, res: Response, next: express.NextFunction
   bucket.count++;
   if (bucket.count > PUBLIC_RATE_MAX) {
     res.setHeader('Retry-After', '60');
-    return res.status(429).json({ ok: false, error: 'Too many requests. Please try again shortly.' });
+    res.status(429).json({ ok: false, error: 'Too many requests. Please try again shortly.' });
+    return;
   }
   next();
 }
