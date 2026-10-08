@@ -12,7 +12,7 @@ export type VideoDeliveryEventType =
 export async function recordVideoDeliveryEvent(params: {
   eventType: VideoDeliveryEventType;
   telegramUserId?: number | null;
-  videoId?: number | null;
+  videoId?: string | null;
   code?: string | null;
   source?: 'deep_link' | 'search' | 'callback' | 'unknown';
   success?: boolean;
