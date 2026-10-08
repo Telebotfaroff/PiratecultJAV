@@ -604,10 +604,12 @@ bot.command('start', async (ctx) => {
   });
 
   bot.command('help', async (ctx) => {
-    const admin = Boolean(ctx.from && isAdmin(ctx.from.id));
-
-    const userHelp = [
+    return ctx.reply([
       '<b>Help</b>',
+      '',
+      'Send a code or keyword to search.',
+      '',
+      'Commands',
       '',
       '/start',
       '/help',
@@ -616,39 +618,7 @@ bot.command('start', async (ctx) => {
       '/promo &lt;CODE&gt;',
       '/referral',
       '/leaderboard'
-    ].join('\\n');
-
-    if (!admin) return ctx.reply(userHelp, { parse_mode: 'HTML' });
-
-    const adminHelp = [
-      userHelp,
-      '',
-      '<b>Admin</b>',
-      '',
-      '/admin',
-      '/stats',
-      '/post',
-      '/broadcast &lt;message&gt;',
-      '/user &lt;user_id&gt;',
-      '/setplan &lt;user_id&gt; &lt;plan&gt;',
-      '/quota',
-      '/setquota &lt;free&gt; &lt;semi_premium&gt;',
-      '/createpromo &lt;CODE&gt; &lt;plan&gt; &lt;days&gt;',
-      '/promos',
-      '/payments',
-      '/deactivatepromo &lt;CODE&gt;',
-      '/activatepromo &lt;CODE&gt;',
-      '/block &lt;user_id&gt;',
-      '/unblock &lt;user_id&gt;',
-      '/jobs',
-      '/retryjob &lt;job_id&gt;',
-      '/test &lt;code&gt;',
-      '/addfs &lt;channel_id&gt;',
-      '/removefs &lt;record_id&gt;',
-      '/cancel'
-    ].join('\\n');
-
-    return ctx.reply(adminHelp, { parse_mode: 'HTML' });
+    ].join('\\n'), { parse_mode: 'HTML' });
   });
 
   // Admin command center
