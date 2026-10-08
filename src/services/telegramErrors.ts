@@ -5,7 +5,8 @@ export type TelegramErrorKind =
   | 'invalid_chat'
   | 'timeout'
   | 'network'
-  | 'unknown';
+  | 'unknown'
+  | 'not_modified';
 
 export interface TelegramErrorInfo {
   kind: TelegramErrorKind;
@@ -34,6 +35,10 @@ export function classifyTelegramError(error: unknown): TelegramErrorInfo {
 
   if (errorCode === 400 && /message to delete not found|message can't be deleted|message not found/i.test(description)) {
     return { kind: 'not_found', message: description, errorCode };
+  }
+
+  if (errorCode === 400 && /message is not modified/i.test(description)) {
+    return { kind: 'not_modified', message: description, errorCode };
   }
 
   if (/timeout|timed out|etimedout|econnreset|socket hang up/i.test(description)) {
