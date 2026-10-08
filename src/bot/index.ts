@@ -4,7 +4,7 @@ import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../se
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
 import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
-import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
+import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
 import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/dump.ts';
