@@ -19,3 +19,25 @@ CREATE INDEX IF NOT EXISTS idx_force_sub_active
 -- Normalize duplicate code variants at the database boundary.
 CREATE UNIQUE INDEX IF NOT EXISTS uq_videos_normalized_code
   ON videos (normalized_code);
+
+
+-- 2026-10 search improvements
+CREATE EXTENSION IF NOT EXISTS pg_trgm;
+
+ALTER TABLE videos
+  ADD COLUMN IF NOT EXISTS search_text TEXT
+  GENERATED ALWAYS AS (
+    lower(
+      concat_ws(
+        ' ',
+        coalesce(code, ''),
+        coalesce(title, ''),
+        coalesce(description, ''),
+        coalesce(provider, ''),
+        coalesce(metadata::text, '')
+      )
+    )
+  ) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_videos_search_text_trgm
+  ON videos USING gin (search_text gin_trgm_ops);
