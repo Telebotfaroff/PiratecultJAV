@@ -450,13 +450,26 @@ bot.command('start', async (ctx) => {
 
   bot.command('addfs', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const parts = ctx.message.text.replace(/^\/addfs\s*/i, '').trim().split('|').map(v => v.trim());
-    if (parts.length < 2) return ctx.reply('Usage: /addfs channel_id | title | invite_link | request:true');
+    const raw = ctx.message.text.replace(/^\/addfs\s*/i, '').trim();
+    const parts = raw.split('|').map(v => v.trim());
+    const channelId = parts[0];
+    const requestMode = /^(true|yes|1)$/i.test((parts[1] || '').replace(/^request\s*:\s*/i, ''));
+    if (!channelId) return ctx.reply('Usage: /addfs <channel_id> [| request:true|false]');
     try {
-      const channel = await upsertForceSubChannel({ channelId: parts[0], title: parts[1], inviteLink: parts[2] || null, requestMode: /^(true|yes|1)$/i.test(parts[3] || ''), isActive: true });
-      return ctx.reply(`✅ Saved: ${channel.title} (${channel.channel_id})\nRequest mode: ${channel.request_mode ? 'ON' : 'OFF'}`);
+      const invite = await createForceSubInviteLink(bot, channelId, requestMode);
+      const channel = await upsertForceSubChannel({
+        channelId,
+        title: invite.title,
+        inviteLink: invite.inviteLink,
+        requestMode,
+        isActive: true,
+      });
+      return ctx.reply(
+        `✅ <b>Force-sub channel added</b>\\n\\n📢 <b>${escapeHtml(channel.title)}</b>\\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
+        { parse_mode: 'HTML' },
+      );
     } catch (err: unknown) {
-      return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
+      return ctx.reply('❌ Could not add channel. Make sure the bot is an administrator and can create invite links.\\n\\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
     }
   });
 
@@ -710,7 +723,14 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await setAdminSession(ctx.from.id, 'force_sub_add', 'awaiting_channel');
     await ctx.answerCbQuery();
-    return ctx.reply('➕ Send: <code>channel_id | title | invite_link | request:true</code>', { parse_mode: 'HTML' });
+    return ctx.reply(
+      '➕ <b>Add Force-Sub Channel</b>\\n\\n' +
+      'Add the bot as an administrator in the channel first.\\n\\n' +
+      'Then send:\\n<code>channel_id</code>\\n\\n' +
+      'Optional request mode:\\n<code>channel_id | request:true</code>\\n<code>channel_id | request:false</code>\\n\\n' +
+      'The bot will automatically read the channel title and create the correct invite link.',
+      { parse_mode: 'HTML' },
+    );
   });
 
   bot.action(/^settings:forcesub:toggle-channel:(.+)$/, async (ctx) => {
@@ -1164,12 +1184,26 @@ bot.command('start', async (ctx) => {
 
     if (session.action === 'force_sub_add' && session.step === 'awaiting_channel' && 'text' in ctx.message) {
       const parts = ctx.message.text.trim().split('|').map(v => v.trim());
-      if (parts.length < 2) return ctx.reply('Format: channel_id | title | invite_link | request:true');
+      const channelId = parts[0];
+      const requestMode = /^(true|yes|1)$/i.test((parts[1] || '').replace(/^request\s*:\s*/i, ''));
+      if (!channelId) return ctx.reply('Format: channel_id | request:true|false');
       try {
-        const channel = await upsertForceSubChannel({ channelId: parts[0], title: parts[1], inviteLink: parts[2] || null, requestMode: /^(true|yes|1)$/i.test(parts[3] || ''), isActive: true });
+        const invite = await createForceSubInviteLink(bot, channelId, requestMode);
+        const channel = await upsertForceSubChannel({
+          channelId,
+          title: invite.title,
+          inviteLink: invite.inviteLink,
+          requestMode,
+          isActive: true,
+        });
         await clearAdminSession(ctx.from.id);
-        return ctx.reply('✅ Force-sub channel saved: ' + channel.title);
-      } catch (err: unknown) { return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err))); }
+        return ctx.reply(
+          `✅ <b>Force-sub channel saved</b>\\n\\n📢 <b>${escapeHtml(channel.title)}</b>\\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
+          { parse_mode: 'HTML' },
+        );
+      } catch (err: unknown) {
+        return ctx.reply('❌ Could not configure channel. Make sure the bot is an administrator with permission to create invite links.\\n\\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+      }
     }
 
     if (session.action !== 'post') {
