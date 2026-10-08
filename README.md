@@ -1,4 +1,4 @@
-# PiratecultJAV
+# Telegram Bot Service
 
 Telegram bot and web service with Supabase PostgreSQL, Telegram storage, and a persistent Node.js server.
 
@@ -144,14 +144,14 @@ Stop the test process with `Ctrl+C`.
 Create the service:
 
 ```bash
-sudo nano /etc/systemd/system/piratecultjav.service
+sudo nano /etc/systemd/system/telegram-bot-service.service
 ```
 
 Use:
 
 ```ini
 [Unit]
-Description=PiratecultJAV Node Service
+Description=Telegram Bot Service Node Service
 After=network.target
 
 [Service]
@@ -173,20 +173,20 @@ Then enable and start it:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable piratecultjav
-sudo systemctl start piratecultjav
+sudo systemctl enable telegram-bot-service
+sudo systemctl start telegram-bot-service
 ```
 
 Check status:
 
 ```bash
-sudo systemctl status piratecultjav
+sudo systemctl status telegram-bot-service
 ```
 
 View logs:
 
 ```bash
-sudo journalctl -u piratecultjav -f
+sudo journalctl -u telegram-bot-service -f
 ```
 
 ### 8. Restart after an update
@@ -195,7 +195,7 @@ sudo journalctl -u piratecultjav -f
 git pull
 npm install
 npm run lint
-sudo systemctl restart piratecultjav
+sudo systemctl restart telegram-bot-service
 ```
 
 Check:
@@ -215,23 +215,23 @@ cd /opt/Piratecultjav
 git pull
 npm install
 npm run lint
-sudo systemctl restart piratecultjav
+sudo systemctl restart telegram-bot-service
 ```
 
 If the service fails after an update:
 
-```sudo systemctl status piratecultjav
-sudo journalctl -u piratecultjav -n 100 --no-pager
+```sudo systemctl status telegram-bot-service
+sudo journalctl -u telegram-bot-service -n 100 --no-pager
 ```
 
 ## Useful Commands
 
 ```bash
-sudo systemctl start piratecultjav
-sudo systemctl stop piratecultjav
-sudo systemctl restart piratecultjav
-sudo systemctl status piratecultjav
-sudo journalctl -u piratecultjav -f
+sudo systemctl start telegram-bot-service
+sudo systemctl stop telegram-bot-service
+sudo systemctl restart telegram-bot-service
+sudo systemctl status telegram-bot-service
+sudo journalctl -u telegram-bot-service -f
 ```
 
 ## Health Checks
