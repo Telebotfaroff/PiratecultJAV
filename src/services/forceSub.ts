@@ -96,6 +96,23 @@ export async function checkUserForceSub(
 }
 
 
+export async function createForceSubInviteLink(
+  bot: Telegraf,
+  channelId: string,
+  requestMode: boolean,
+): Promise<{ title: string; inviteLink: string }> {
+  const chat = await bot.telegram.getChat(channelId);
+  const title = 'title' in chat ? String(chat.title || channelId) : channelId;
+
+  // Create a fresh link owned by the bot. For request mode Telegram requires
+  // creates_join_request=true; otherwise users join immediately.
+  const link = await bot.telegram.createChatInviteLink(channelId, {
+    creates_join_request: requestMode,
+  });
+
+  return { title, inviteLink: link.invite_link };
+}
+
 export async function getAllForceSubChannels(): Promise<ForceSubChannel[]> {
   const supabase = getSupabase();
   const { data, error } = await supabase
