@@ -1550,6 +1550,7 @@ export function getBot(): Telegraf | null {
 
 
 async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, source: 'deep_link' | 'search' | 'callback' | 'unknown' = 'unknown') {
+  let quotaConsumed = false;
   try {
     await recordVideoDeliveryEvent({ eventType: 'attempt', telegramUserId: ctx.from?.id, source });
     const rawCode = identifier.trim();
@@ -1608,7 +1609,6 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
 
     // 4. Enforce the user's daily video allowance only after force-sub passes.
     // Admins are exempt. This also covers direct /start CODE links.
-    let quotaConsumed = false;
     if (ctx.from && !isAdmin(ctx.from.id)) {
       try {
         const allowance = await consumeVideoDownload(ctx.from.id);
