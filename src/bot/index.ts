@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, listPromoCodes, setPromoCodeActive, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, listPremiumPayments, listPromoCodes, setPromoCodeActive, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -247,6 +247,24 @@ bot.command('start', async (ctx) => {
     return ctx.reply('📝 *Admin Post:* Please enter the JAV code to post (e.g. `ADN-001`):', {
       parse_mode: 'Markdown',
     });
+  });
+
+  bot.command('payments', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    try {
+      const payments = await listPremiumPayments(20);
+      if (!payments.length) return ctx.reply('💳 No Premium payments recorded yet.');
+      const lines = payments.map((p, i) =>
+        `${i + 1}. 👤 <code>${p.telegram_user_id}</code> · 💎 ${p.duration_days}d · ⭐ ${p.amount_stars} · ${escapeHtml(new Date(p.created_at).toLocaleString())}`
+      );
+      return ctx.reply(
+        '💳 <b>Recent Premium Payments</b>\\n\\n' + lines.join('\\n'),
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Monetization', 'admin:monetization')]]) },
+      );
+    } catch (err) {
+      console.error('[Payment] List failed:', err);
+      return ctx.reply('❌ Could not load payment history.');
+    }
   });
 
   bot.command('promos', async (ctx) => {
@@ -630,6 +648,7 @@ bot.command('start', async (ctx) => {
       '/setquota &lt;free_daily&gt; &lt;semi_premium_daily&gt; — Set daily quotas',
       '/createpromo &lt;CODE&gt; &lt;premium|semi_premium|unlimited&gt; &lt;days&gt; [max_uses] [expiry]',
       '/promos — List promo codes',
+      '/payments — Recent Premium payments',
       '/deactivatepromo &lt;CODE&gt; — Disable a promo code',
       '/activatepromo &lt;CODE&gt; — Re-enable a promo code',
       '/block &lt;user_id&gt; — Block a user',
