@@ -228,7 +228,7 @@ export function createApp(): express.Express {
 
       const botUsername = await getBotUsername();
       const botUrl = botUsername
-        ? 'https://t.me/' + botUsername + '?start=' + encodeURIComponent(video.code)
+        ? 'https://t.me/' + botUsername + '?start=' + encodeURIComponent('v_' + video.id)
         : null;
 
       return res.json({
