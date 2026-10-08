@@ -346,6 +346,18 @@ export async function consumeVideoDownload(telegramUserId: number): Promise<Down
   };
 }
 
+export async function refundVideoDownload(telegramUserId: number): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('refund_video_download', { p_user_id: telegramUserId });
+  if (error) {
+    if (error.message.includes('Could not find the function') || error.code === 'PGRST202' || error.message.includes('schema cache')) {
+      return false;
+    }
+    throw new Error(`Failed refunding download allowance: ${error.message}`);
+  }
+  return Boolean(data);
+}
+
 export async function registerReferral(referrerId: number, referredId: number): Promise<{ success: boolean; unlimited_until: string | null }> {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('register_referral', {
