@@ -10,7 +10,12 @@ export async function getSetting<T = unknown>(key: string, defaultValue: T): Pro
       .maybeSingle();
 
     if (error || !data) return defaultValue;
-    return (data.value as T) ?? defaultValue;
+    const value = data.value;
+    if (typeof defaultValue === 'boolean') {
+      if (typeof value === 'boolean') return value as T;
+      if (typeof value === 'string') return (/^true$/i.test(value.trim()) ? true : /^false$/i.test(value.trim()) ? false : defaultValue) as T;
+    }
+    return (value as T) ?? defaultValue;
   } catch {
     return defaultValue;
   }
