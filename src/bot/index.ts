@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -139,6 +139,51 @@ bot.command('start', async (ctx) => {
     });
   });
 
+  bot.command('createpromo', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+
+    const parts = ctx.message.text.trim().split(/\\s+/);
+    const code = parts[1]?.trim().toUpperCase();
+    const reward = parts[2]?.toLowerCase();
+    const days = Number(parts[3]);
+    const maxUsesRaw = parts[4];
+    const expiryRaw = parts[5];
+
+    if (!code || !['premium', 'semi_premium', 'unlimited'].includes(reward) || !Number.isInteger(days) || days <= 0) {
+      return ctx.reply(
+        'Usage:\\n/createpromo <CODE> <premium|semi_premium|unlimited> <days> [max_uses] [expiry_iso]\\n\\nExample: /createpromo WELCOME30 premium 30 100'
+      );
+    }
+
+    const maxUses = maxUsesRaw && maxUsesRaw !== '-' ? Number(maxUsesRaw) : null;
+    if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses <= 0)) {
+      return ctx.reply('❌ max_uses must be a positive integer.');
+    }
+
+    let expiresAt: string | null = null;
+    if (expiryRaw && expiryRaw !== '-') {
+      const parsed = new Date(expiryRaw);
+      if (Number.isNaN(parsed.getTime())) return ctx.reply('❌ Invalid expiry. Use ISO format, e.g. 2026-12-31T23:59:59Z.');
+      expiresAt = parsed.toISOString();
+    }
+
+    const rewardType = reward === 'unlimited' ? 'unlimited' : 'plan';
+    const rewardPlan = rewardType === 'plan' ? reward as 'premium' | 'semi_premium' : null;
+
+    try {
+      const ok = await createPromoCode(code, rewardType, rewardPlan, days, maxUses, expiresAt, ctx.from!.id);
+      if (!ok) return ctx.reply('❌ Could not create promo. The code may already exist or the reward settings are invalid.');
+
+      return ctx.reply(
+        `✅ <b>Promo created</b>\\n\\n🎟️ Code: <code>${escapeHtml(code)}</code>\\n🎁 Reward: <b>${rewardType === 'unlimited' ? `Unlimited for ${days} day(s)` : `${rewardPlan} for ${days} day(s)`}</b>\\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>${expiresAt ? `\\n⏰ Expires: <b>${escapeHtml(new Date(expiresAt).toLocaleString())}</b>` : ''}`,
+        { parse_mode: 'HTML' },
+      );
+    } catch (err) {
+      console.error('[Promo] Create failed:', err);
+      return ctx.reply('❌ Failed to create promo code.');
+    }
+  });
+
   bot.command('setplan', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
     const parts = ctx.message.text.trim().split(/\s+/);
@@ -149,6 +194,32 @@ bot.command('start', async (ctx) => {
     }
     const ok = await setUserPlan(userId, plan);
     return ctx.reply(ok ? `✅ User ${userId} set to ${plan}.` : '❌ User not found.');
+  });
+
+  bot.command('promo', async (ctx) => {
+    if (!ctx.from) return;
+    const parts = ctx.message.text.trim().split(/\\s+/);
+    const code = parts[1]?.trim();
+    if (!code) return ctx.reply('Usage: /promo <CODE>');
+
+    try {
+      const result = await redeemPromoCode(ctx.from.id, code);
+      if (!result.success) {
+        return ctx.reply(`❌ ${escapeHtml(result.message)}`, { parse_mode: 'HTML' });
+      }
+
+      const reward = result.reward_type === 'unlimited'
+        ? `∞ Unlimited access for ${result.reward_days} day(s)`
+        : `${result.reward_plan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} for ${result.reward_days} day(s)`;
+
+      return ctx.reply(
+        `🎉 <b>Promo redeemed!</b>\\n\\n🎟️ Code: <code>${escapeHtml(code.toUpperCase())}</code>\\n🎁 Reward: <b>${reward}</b>\\n📅 Until: <b>${result.expires_at ? escapeHtml(new Date(result.expires_at).toLocaleString()) : 'active'}</b>`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) },
+      );
+    } catch (err) {
+      console.error('[Promo] Redemption failed:', err);
+      return ctx.reply('⚠️ Could not redeem this promo code right now. Please try again later.');
+    }
   });
 
   bot.command('plan', async (ctx) => {
@@ -500,6 +571,12 @@ bot.command('start', async (ctx) => {
     const identifier = ctx.match[1];
     await ctx.answerCbQuery('Fetching video...');
     return deliverVideoToUser(bot, ctx, identifier);
+  });
+
+  bot.action('user:promo', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return ctx.reply('🎟️ <b>Redeem Promo</b>\\n\\nUse <code>/promo YOUR_CODE</code> to redeem a promo code.', { parse_mode: 'HTML' });
   });
 
   bot.action('user:leaderboard', async (ctx) => {
@@ -1207,6 +1284,7 @@ async function sendUserPlan(ctx: any) {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
+      [Markup.button.callback('🎟️ Promo Code', 'user:promo')],
       [Markup.button.callback('🏆 Leaderboard', 'user:leaderboard'), Markup.button.callback('🔄 Refresh', 'user:plan')],
     ]),
   });
