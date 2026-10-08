@@ -12,6 +12,7 @@ import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
 import { classifyTelegramError, withTelegramRetry } from '../services/telegramErrors.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
+import { escapeHtml, formatTimer } from './helpers/formatting.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
@@ -1794,14 +1795,6 @@ async function sendReferralInfo(ctx: any) {
   );
 }
 
-function escapeHtml(value: unknown): string {
-  if (value === null || value === undefined) return '';
-  return String(value)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-}
-
 async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   const pageSize = 5;
   const offset = page * pageSize;
@@ -1963,14 +1956,6 @@ async function showAdminSettings(ctx: any) {
   if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
   return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 }
-function formatTimer(seconds: number): string {
-  if (!Number.isFinite(seconds) || seconds <= 0) return 'OFF';
-  if (seconds % 86400 === 0) return seconds / 86400 + ' day(s)';
-  if (seconds % 3600 === 0) return seconds / 3600 + ' hour(s)';
-  if (seconds % 60 === 0) return seconds / 60 + ' minute(s)';
-  return seconds + ' second(s)';
-}
-
 /**
  * Starts Telegram bot polling safely ensuring only one instance runs.
  */
