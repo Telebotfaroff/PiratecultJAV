@@ -277,6 +277,31 @@ bot.command('start', async (ctx) => {
     }
   });
 
+  bot.command('user', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const userId = Number(ctx.message.text.trim().split(/\s+/)[1]);
+    if (!Number.isSafeInteger(userId)) return ctx.reply('Usage: /user <telegram_user_id>');
+    try {
+      const dashboard = await getUserDashboard(userId);
+      if (!dashboard) return ctx.reply('❌ User not found.');
+      const plan = dashboard.plan === 'premium' ? '💎 Premium' : dashboard.plan === 'semi_premium' ? '⚡ Semi Premium' : '🆓 Free';
+      const expiry = dashboard.plan_expires_at ? new Date(dashboard.plan_expires_at).toLocaleString() : '—';
+      const bonus = dashboard.unlimited_until ? new Date(dashboard.unlimited_until).toLocaleString() : '—';
+      return ctx.reply(
+        '👤 <b>User Details</b>\\n\\n' +
+        `🆔 ID: <code>${userId}</code>\\n` +
+        `⭐ Plan: <b>${plan}</b>\\n` +
+        `📅 Plan expiry: <b>${escapeHtml(expiry)}</b>\\n` +
+        `🎁 Unlimited bonus: <b>${escapeHtml(bonus)}</b>\\n` +
+        `🎬 Today: <b>${dashboard.daily_used}/${dashboard.daily_limit}</b>\\n` +
+        `🤝 Referrals: <b>${dashboard.completed_referral_count}/${dashboard.referral_count}</b>`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) },
+      );
+    } catch (err) {
+      return ctx.reply('❌ Could not load user: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+    }
+  });
+
   bot.command('setplan', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
     const parts = ctx.message.text.trim().split(/\s+/);
@@ -460,7 +485,10 @@ bot.command('start', async (ctx) => {
       '/start — Start the bot',
       '/help — Show this help',
       '/plan — Show your plan and daily allowance',
+      '/premium — View Premium packages',
+      '/promo <CODE> — Redeem a promo code',
       '/referral — Get your referral link',
+      '/leaderboard — Referral leaderboard',
       '/settings — Admin panel (admins only)',
       '',
       'If a download is unavailable, try searching the code again later.'
@@ -474,19 +502,24 @@ bot.command('start', async (ctx) => {
       '━━━━━━━━━━━━━━━━',
       '👑 <b>ADMIN COMMANDS</b>',
       '',
-      '/settings — Open admin control panel',
+      '/admin — Open the admin command center',
+      '/settings — Open the admin command center (alias)',
+      '/stats — Quick system statistics',
       '/post — Add/publish a video',
-      '/broadcast — Broadcast a message',
-      '/setplan &lt;user_id&gt; &lt;free|semi_premium|premium&gt; — Set plan',
+      '/broadcast &lt;message&gt; — Broadcast to users',
+      '/user &lt;user_id&gt; — View a user dashboard',
+      '/setplan &lt;user_id&gt; &lt;free|semi_premium|premium&gt; — Set a plan',
+      '/createpromo &lt;CODE&gt; &lt;premium|semi_premium|unlimited&gt; &lt;days&gt; [max_uses] [expiry]',
       '/block &lt;user_id&gt; — Block a user',
       '/unblock &lt;user_id&gt; — Unblock a user',
       '/jobs — View recent index jobs',
       '/retryjob &lt;job_id&gt; — Retry an index job',
       '/test &lt;code&gt; — Test Javtiful metadata',
-      '/addfs &lt;channel_id&gt; | &lt;title&gt; | &lt;invite_link&gt; | request:true — Add force-sub channel',
+      '/addfs &lt;channel_id&gt; | &lt;title&gt; | &lt;invite_link&gt; | request:true',
       '/removefs &lt;record_id&gt; — Remove force-sub channel',
+      '/cancel — Cancel the current admin operation',
       '',
-      '⚙️ <b>Admin panel</b> also provides video search/edit/delete, metadata refresh, status control, force-sub management, broadcast, statistics, maintenance, delete timer and bot recovery.',
+      '🧭 <b>Dashboard sections</b>: Overview · Users · Monetization · Content · Broadcast · Force Sub · System · Recovery.',
       '',
       '🔐 Only Telegram IDs listed in <code>ADMIN_IDS</code> can use admin functions.'
     ].join('\\n');
