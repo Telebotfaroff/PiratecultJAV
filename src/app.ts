@@ -116,10 +116,63 @@ export function createApp(): express.Express {
 
   // Non-negotiable requirement: /health endpoint
   app.get('/health', (_req: Request, res: Response) => {
-    res.json({
+    res.status(200).json({
       ok: true,
       service: 'PiratecultJAV',
+      timestamp: new Date().toISOString(),
+      uptime: process.uptime(),
     });
+  });
+
+  // Readiness endpoint: unlike /health, this verifies the critical database dependency.
+  // It is suitable for load balancers and deployment platforms that need to know
+  // whether the instance can actually serve application traffic.
+  app.get('/ready', async (_req: Request, res: Response) => {
+    const started = Date.now();
+    try {
+      const validation = validateConfig();
+      if (!validation.valid) {
+        return res.status(503).json({
+          ok: false,
+          ready: false,
+          reason: 'configuration',
+          missing: validation.missing,
+          latencyMs: Date.now() - started,
+        });
+      }
+
+      const supabase = await checkSupabaseConnection();
+      const botReady = isBotActive();
+
+      if (!supabase.connected || !botReady) {
+        return res.status(503).json({
+          ok: false,
+          ready: false,
+          dependencies: {
+            supabase: supabase.connected,
+            bot: botReady,
+          },
+          latencyMs: Date.now() - started,
+        });
+      }
+
+      return res.status(200).json({
+        ok: true,
+        ready: true,
+        dependencies: {
+          supabase: true,
+          bot: true,
+        },
+        latencyMs: Date.now() - started,
+      });
+    } catch (err) {
+      return res.status(503).json({
+        ok: false,
+        ready: false,
+        reason: 'dependency_check_failed',
+        latencyMs: Date.now() - started,
+      });
+    }
   });
 
   // System status and diagnostics
