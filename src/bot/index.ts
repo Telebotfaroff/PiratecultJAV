@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, listPromoCodes, setPromoCodeActive, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -247,6 +247,53 @@ bot.command('start', async (ctx) => {
     return ctx.reply('📝 *Admin Post:* Please enter the JAV code to post (e.g. `ADN-001`):', {
       parse_mode: 'Markdown',
     });
+  });
+
+  bot.command('promos', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    try {
+      const promos = await listPromoCodes(20);
+      if (!promos.length) return ctx.reply('🎟️ No promo codes found.');
+      const lines = promos.map((p, i) => {
+        const reward = p.reward_type === 'unlimited' ? `∞ ${p.reward_days}d unlimited` : `${p.reward_plan} ${p.reward_days}d`;
+        const usage = p.max_uses === null ? `${p.used_count}/∞` : `${p.used_count}/${p.max_uses}`;
+        const expiry = p.expires_at ? new Date(p.expires_at).toLocaleString() : 'never';
+        return `${i + 1}. <code>${escapeHtml(p.code)}</code> · ${p.is_active ? '🟢' : '🔴'} · ${reward} · ${usage} · exp: ${escapeHtml(expiry)}`;
+      });
+      return ctx.reply('🎟️ <b>Promo Codes</b>\\n\\n' + lines.join('\\n'), {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Monetization', 'admin:monetization')]]),
+      });
+    } catch (err) {
+      console.error('[Promo] List failed:', err);
+      return ctx.reply('❌ Could not load promo codes.');
+    }
+  });
+
+  bot.command('deactivatepromo', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const code = ctx.message.text.trim().split(/\s+/)[1]?.trim();
+    if (!code) return ctx.reply('Usage: /deactivatepromo <CODE>');
+    try {
+      const ok = await setPromoCodeActive(code, false);
+      return ctx.reply(ok ? `✅ Promo <code>${escapeHtml(code.toUpperCase())}</code> deactivated.` : '❌ Promo code not found.', { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[Promo] Deactivate failed:', err);
+      return ctx.reply('❌ Could not deactivate promo code.');
+    }
+  });
+
+  bot.command('activatepromo', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const code = ctx.message.text.trim().split(/\s+/)[1]?.trim();
+    if (!code) return ctx.reply('Usage: /activatepromo <CODE>');
+    try {
+      const ok = await setPromoCodeActive(code, true);
+      return ctx.reply(ok ? `✅ Promo <code>${escapeHtml(code.toUpperCase())}</code> activated.` : '❌ Promo code not found.', { parse_mode: 'HTML' });
+    } catch (err) {
+      console.error('[Promo] Activate failed:', err);
+      return ctx.reply('❌ Could not activate promo code.');
+    }
   });
 
   bot.command('createpromo', async (ctx) => {
@@ -582,6 +629,9 @@ bot.command('start', async (ctx) => {
       '/quota — View daily download quotas',
       '/setquota &lt;free_daily&gt; &lt;semi_premium_daily&gt; — Set daily quotas',
       '/createpromo &lt;CODE&gt; &lt;premium|semi_premium|unlimited&gt; &lt;days&gt; [max_uses] [expiry]',
+      '/promos — List promo codes',
+      '/deactivatepromo &lt;CODE&gt; — Disable a promo code',
+      '/activatepromo &lt;CODE&gt; — Re-enable a promo code',
       '/block &lt;user_id&gt; — Block a user',
       '/unblock &lt;user_id&gt; — Unblock a user',
       '/jobs — View recent index jobs',
@@ -668,11 +718,28 @@ bot.command('start', async (ctx) => {
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
-          [Markup.button.callback('🎟️ Promo Help', 'admin:promo_help')],
+          [Markup.button.callback('🎟️ Promo Help', 'admin:promo_help'), Markup.button.callback('📋 Promo List', 'admin:promos')],
           [Markup.button.callback('⬅️ Back', 'settings:main')],
         ]),
       },
     );
+  });
+
+  bot.action('admin:promos', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const promos = await listPromoCodes(20);
+    const lines = promos.length
+      ? promos.map((p, i) => {
+          const reward = p.reward_type === 'unlimited' ? `∞ ${p.reward_days}d unlimited` : `${p.reward_plan} ${p.reward_days}d`;
+          const usage = p.max_uses === null ? `${p.used_count}/∞` : `${p.used_count}/${p.max_uses}`;
+          return `${i + 1}. <code>${escapeHtml(p.code)}</code> · ${p.is_active ? '🟢 Active' : '🔴 Off'} · ${reward} · ${usage}`;
+        })
+      : ['No promo codes.'];
+    return ctx.editMessageText('🎟️ <b>Promo Codes</b>\\n\\n' + lines.join('\\n') + '\\n\\nUse <code>/activatepromo CODE</code> or <code>/deactivatepromo CODE</code>.', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:monetization')]]),
+    });
   });
 
   bot.action('admin:promo_help', async (ctx) => {
