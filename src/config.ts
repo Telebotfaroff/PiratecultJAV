@@ -13,6 +13,9 @@ export interface AppConfig {
   port: number;
   adminApiKey: string;
   adminSessionTtlMs: number;
+  premium7Stars: number;
+  premium30Stars: number;
+  premium90Stars: number;
 }
 
 const rawAdminIds = process.env.ADMIN_IDS || '';
@@ -35,6 +38,9 @@ export const config: AppConfig = {
   port: parseInt(process.env.PORT || '3000', 10),
   adminApiKey: process.env.ADMIN_API_KEY || '',
   adminSessionTtlMs: 12 * 60 * 60 * 1000,
+  premium7Stars: parseInt(process.env.PREMIUM_7_STARS || '50', 10),
+  premium30Stars: parseInt(process.env.PREMIUM_30_STARS || '150', 10),
+  premium90Stars: parseInt(process.env.PREMIUM_90_STARS || '350', 10),
 };
 
 export function isAdmin(telegramUserId: number | undefined): boolean {
