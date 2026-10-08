@@ -161,6 +161,21 @@ export async function registerReferral(referrerId: number, referredId: number): 
   return { success: Boolean(row?.success), unlimited_until: row?.unlimited_until || null };
 }
 
+export async function completeReferral(referredId: number): Promise<{ success: boolean; unlimited_until: string | null }> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('complete_referral', {
+    p_referred: referredId,
+  });
+  if (error) {
+    if (error.message.includes('Could not find the function') || error.code === 'PGRST202' || error.message.includes('schema cache')) {
+      return { success: false, unlimited_until: null };
+    }
+    throw new Error(`Failed completing referral: ${error.message}`);
+  }
+  const row = Array.isArray(data) ? data[0] : data;
+  return { success: Boolean(row?.success), unlimited_until: row?.unlimited_until || null };
+}
+
 export async function setUserPlan(telegramUserId: number, plan: 'free' | 'semi_premium' | 'premium'): Promise<boolean> {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('set_user_plan', {
