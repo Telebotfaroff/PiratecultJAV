@@ -185,8 +185,20 @@ bot.command('start', async (ctx) => {
       return deliverVideoToUser(bot, ctx, isVideoDeepLink ? payload.slice(2) : payload, isVideoDeepLink ? 'deep_link' : 'unknown');
     }
 
-    const welcome = `👋 *Welcome to PiratecultJAV Bot*\\n\\nSend any JAV code (e.g. \`ADN-001\`, \`STAR-765\`, \`JUR-270\`) or keyword to search the catalog.\\n\\nType your code below:`;
-    return ctx.replyWithMarkdown(welcome);
+    const welcome = [
+      '<b>Welcome to PiratecultJAV Bot</b>',
+      '',
+      'Send a code or keyword to search the catalog.',
+      '',
+      '<b>Examples</b>',
+      '<code>ADN-001</code>',
+      '<code>STAR-765</code>',
+      '<code>JUR-270</code>',
+      '',
+      'Type your code below.'
+    ].join('\\n');
+
+    return ctx.reply(welcome, { parse_mode: 'HTML' });
   });
 
   // 3. Cancel command
