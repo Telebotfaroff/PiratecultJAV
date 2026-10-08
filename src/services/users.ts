@@ -193,6 +193,56 @@ export async function getReferralLeaderboard(limit = 10): Promise<ReferralLeader
     .slice(0, safeLimit);
 }
 
+export interface PromoRedemptionResult {
+  success: boolean;
+  message: string;
+  reward_type: 'plan' | 'unlimited' | null;
+  reward_plan: 'semi_premium' | 'premium' | null;
+  reward_days: number;
+  expires_at: string | null;
+}
+
+export async function redeemPromoCode(userId: number, code: string): Promise<PromoRedemptionResult> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('redeem_promo_code', {
+    p_user_id: userId,
+    p_code: code.trim().toUpperCase(),
+  });
+  if (error) throw new Error(`Failed redeeming promo: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    success: Boolean(row?.success),
+    message: String(row?.message || 'Promo could not be redeemed.'),
+    reward_type: row?.reward_type || null,
+    reward_plan: row?.reward_plan || null,
+    reward_days: Number(row?.reward_days || 0),
+    expires_at: row?.expires_at || null,
+  };
+}
+
+export async function createPromoCode(
+  code: string,
+  rewardType: 'plan' | 'unlimited',
+  rewardPlan: 'semi_premium' | 'premium' | null,
+  rewardDays: number,
+  maxUses: number | null,
+  expiresAt: string | null,
+  createdBy: number,
+): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('create_promo_code', {
+    p_code: code.trim().toUpperCase(),
+    p_reward_type: rewardType,
+    p_reward_plan: rewardPlan,
+    p_reward_days: rewardDays,
+    p_max_uses: maxUses,
+    p_expires_at: expiresAt,
+    p_created_by: createdBy,
+  });
+  if (error) throw new Error(`Failed creating promo: ${error.message}`);
+  return Boolean(data);
+}
+
 export async function getUserDashboard(telegramUserId: number): Promise<UserDashboard | null> {
   const supabase = getSupabase();
   const { data: user, error } = await supabase
