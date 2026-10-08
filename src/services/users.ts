@@ -124,7 +124,18 @@ export async function getUser(telegramUserId: number): Promise<UserRecord | null
 export async function consumeVideoDownload(telegramUserId: number): Promise<DownloadAllowance> {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('consume_video_download', { p_user_id: telegramUserId });
-  if (error) throw new Error(`Failed checking download allowance: ${error.message}`);
+  if (error) {
+    if (error.message.includes('Could not find the function') || error.code === 'PGRST202' || error.message.includes('schema cache')) {
+      // Graceful fallback if migration 005 has not been executed on Supabase yet
+      return {
+        allowed: true,
+        remaining: 20,
+        plan: 'free',
+        unlimited_until: null,
+      };
+    }
+    throw new Error(`Failed checking download allowance: ${error.message}`);
+  }
   const row = Array.isArray(data) ? data[0] : data;
   return {
     allowed: Boolean(row?.allowed),
@@ -140,7 +151,12 @@ export async function registerReferral(referrerId: number, referredId: number): 
     p_referrer: referrerId,
     p_referred: referredId,
   });
-  if (error) throw new Error(`Failed registering referral: ${error.message}`);
+  if (error) {
+    if (error.message.includes('Could not find the function') || error.code === 'PGRST202' || error.message.includes('schema cache')) {
+      return { success: false, unlimited_until: null };
+    }
+    throw new Error(`Failed registering referral: ${error.message}`);
+  }
   const row = Array.isArray(data) ? data[0] : data;
   return { success: Boolean(row?.success), unlimited_until: row?.unlimited_until || null };
 }
@@ -151,6 +167,16 @@ export async function setUserPlan(telegramUserId: number, plan: 'free' | 'semi_p
     p_user_id: telegramUserId,
     p_plan: plan,
   });
-  if (error) throw new Error(`Failed setting user plan: ${error.message}`);
+  if (error) {
+    if (error.message.includes('Could not find the function') || error.code === 'PGRST202' || error.message.includes('schema cache')) {
+      // Fallback: direct column update if column exists, else return false
+      const { error: updateError } = await supabase
+        .from('users')
+        .update({ plan, updated_at: new Date().toISOString() })
+        .eq('telegram_user_id', telegramUserId);
+      return !updateError;
+    }
+    throw new Error(`Failed setting user plan: ${error.message}`);
+  }
   return Boolean(data);
 }
