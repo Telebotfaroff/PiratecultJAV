@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -319,6 +319,46 @@ bot.command('start', async (ctx) => {
     }
   });
 
+  bot.command('setquota', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const parts = ctx.message.text.trim().split(/\s+/);
+    const free = Number(parts[1]);
+    const semiPremium = Number(parts[2]);
+    if (!Number.isInteger(free) || free < 0 || free > 100000 || !Number.isInteger(semiPremium) || semiPremium < 0 || semiPremium > 100000) {
+      return ctx.reply('Usage: /setquota <free_daily_limit> <semi_premium_daily_limit>\n\nExample: /setquota 20 40');
+    }
+    try {
+      await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
+      return ctx.reply(
+        '✅ <b>Download quotas updated</b>\\n\\n' +
+        `🆓 Free: <b>${free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${semiPremium}/day</b>\\n` +
+        '💎 Premium: <b>Unlimited</b>',
+        { parse_mode: 'HTML' },
+      );
+    } catch (err) {
+      console.error('[Quota] Update failed:', err);
+      return ctx.reply('❌ Failed to save download quotas.');
+    }
+  });
+
+  bot.command('quota', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    try {
+      const q = await getDownloadQuotaSettings();
+      return ctx.reply(
+        '📥 <b>Download Quotas</b>\\n\\n' +
+        `🆓 Free: <b>${q.free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
+        '💎 Premium: <b>Unlimited</b>\\n\\n' +
+        'Change with <code>/setquota FREE SEMI_PREMIUM</code>.',
+        { parse_mode: 'HTML' },
+      );
+    } catch {
+      return ctx.reply('❌ Could not load download quotas.');
+    }
+  });
+
   bot.command('setplan', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
     const parts = ctx.message.text.trim().split(/\s+/);
@@ -539,6 +579,8 @@ bot.command('start', async (ctx) => {
       '/broadcast &lt;message&gt; — Broadcast to users',
       '/user &lt;user_id&gt; — View a user dashboard',
       '/setplan &lt;user_id&gt; &lt;free|semi_premium|premium&gt; — Set a plan',
+      '/quota — View daily download quotas',
+      '/setquota &lt;free_daily&gt; &lt;semi_premium_daily&gt; — Set daily quotas',
       '/createpromo &lt;CODE&gt; &lt;premium|semi_premium|unlimited&gt; &lt;days&gt; [max_uses] [expiry]',
       '/block &lt;user_id&gt; — Block a user',
       '/unblock &lt;user_id&gt; — Unblock a user',
@@ -598,6 +640,20 @@ bot.command('start', async (ctx) => {
     );
   });
 
+  bot.action('admin:quota', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const q = await getDownloadQuotaSettings();
+    return ctx.editMessageText(
+      '📥 <b>Download Quotas</b>\\n\\n' +
+      `🆓 Free: <b>${q.free}/day</b>\\n` +
+      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
+      '💎 Premium: <b>Unlimited</b>\\n\\n' +
+      'Use <code>/setquota FREE SEMI_PREMIUM</code> to change the limits.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]) },
+    );
+  });
+
   bot.action('admin:monetization', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
@@ -607,7 +663,8 @@ bot.command('start', async (ctx) => {
       `💎 Premium 30d: <b>${config.premium30Stars} ⭐</b>\\n` +
       `💎 Premium 90d: <b>${config.premium90Stars} ⭐</b>\\n\\n` +
       '🎟️ Promo codes are managed with <code>/createpromo</code>.\\n' +
-      '👤 Manual access is managed with <code>/setplan</code>.',
+      '👤 Manual access is managed with <code>/setplan</code>.\\n' +
+      '📥 Daily quotas are managed with <code>/setquota</code>.',
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
@@ -1835,7 +1892,8 @@ async function showAdminSettings(ctx: any) {
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback('📊 Overview', 'admin:overview'), Markup.button.callback('👥 Users', 'admin:users')],
-    [Markup.button.callback('💰 Monetization', 'admin:monetization'), Markup.button.callback('🎬 Content', 'admin:content')],
+    [Markup.button.callback('💰 Monetization', 'admin:monetization'), Markup.button.callback('📥 Quotas', 'admin:quota')],
+    [Markup.button.callback('🎬 Content', 'admin:content'), Markup.button.callback('👥 Users', 'admin:users')],
     [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🔒 Force Sub', 'settings:forcesub')],
     [Markup.button.callback('🛠️ System', 'admin:system'), Markup.button.callback('🔄 Recovery', 'settings:recovery')],
     [Markup.button.callback('❌ Close', 'settings:close')],
