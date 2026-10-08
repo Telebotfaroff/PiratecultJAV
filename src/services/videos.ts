@@ -46,13 +46,7 @@ export async function searchVideos(query: string, limit = 24, offset = 0): Promi
   } else if (trimmed) {
     // Search the denormalized search_text field so title, description, actress,
     // studio and genre metadata are searchable from the same input.
-    const searchTerm = trimmed.replace(/[%_]/g, '\\  if (normalized) {
-    dbQuery = dbQuery.ilike('normalized_code', '%' + normalized + '%');
-  } else if (trimmed) {
-    dbQuery = dbQuery.or(
-      'title.ilike.%' + trimmed + '%,code.ilike.%' + trimmed + '%,description.ilike.%' + trimmed + '%'
-    );
-  }');
+    const searchTerm = trimmed.replace(/[%_]/g, '\\$&');
     dbQuery = dbQuery.ilike('search_text', '%' + searchTerm + '%');
   }
 
