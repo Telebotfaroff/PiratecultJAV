@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -61,7 +61,10 @@ function createBot(token: string): Telegraf {
   });
 
   // 2. Start command
-  bot.command('start', async (ctx) => {
+    bot.command('dashboard', async (ctx) => sendUserPlan(ctx));
+  bot.command('plan', async (ctx) => sendUserPlan(ctx));
+
+bot.command('start', async (ctx) => {
     const startText = 'text' in ctx.message ? ctx.message.text : '';
     let payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
 
@@ -1115,16 +1118,49 @@ async function showAdminVideoEditMenu(ctx: any, videoId: string) {
 
 async function sendUserPlan(ctx: any) {
   if (!ctx.from) return;
-  const user = await getUser(ctx.from.id);
-  if (!user) return ctx.reply('⚠️ Your account is not ready yet. Please send /start again.');
-  const unlimited = user.plan === 'premium' || (user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now());
-  const limit = user.plan === 'semi_premium' ? 40 : 20;
-  const remaining = unlimited ? '∞' : String(Math.max(limit - (user.daily_download_date === new Date().toISOString().slice(0,10) ? user.daily_download_count : 0), 0));
-  const planName = user.plan === 'premium' ? 'Premium' : user.plan === 'semi_premium' ? 'Semi Premium' : 'Free';
-  const reward = user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now()
-    ? `\n🎁 Referral/bonus unlimited until: <b>${escapeHtml(new Date(user.unlimited_until).toLocaleString())}</b>`
+  const dashboard = await getUserDashboard(ctx.from.id);
+  if (!dashboard) return ctx.reply('⚠️ Your account is not ready yet. Please send /start again.');
+
+  const planName = dashboard.plan === 'premium' ? '💎 Premium'
+    : dashboard.plan === 'semi_premium' ? '⚡ Semi Premium'
+    : '🆓 Free';
+
+  const expiry = dashboard.plan_expires_at
+    ? `\n📅 Plan expires: <b>${escapeHtml(new Date(dashboard.plan_expires_at).toLocaleString())}</b>`
+    : dashboard.plan === 'premium' ? '\n📅 Plan: <b>Permanent</b>' : '';
+
+  const bonus = dashboard.unlimited_until && new Date(dashboard.unlimited_until).getTime() > Date.now()
+    ? `\n🎁 Unlimited bonus until: <b>${escapeHtml(new Date(dashboard.unlimited_until).toLocaleString())}</b>`
     : '';
-  return ctx.reply(`📊 <b>Your Plan</b>\n\n⭐ Plan: <b>${planName}</b>\n🎬 Remaining today: <b>${remaining}</b>${reward}\n\nFree: 20/day\nSemi Premium: 40/day\nPremium: unlimited`, { parse_mode: 'HTML' });
+
+  const remaining = dashboard.is_unlimited ? '∞' : String(dashboard.daily_remaining);
+  const referrals = dashboard.referral_count;
+  const completed = dashboard.completed_referral_count;
+
+  const text = [
+    '📊 <b>Your Dashboard</b>',
+    '',
+    `👤 User ID: <code>${ctx.from.id}</code>`,
+    `⭐ Plan: <b>${planName}</b>`,
+    `🎬 Today: <b>${remaining}</b> downloads remaining${dashboard.is_unlimited ? '' : ` / ${dashboard.daily_limit}`}`,
+    `📈 Used today: <b>${dashboard.daily_used}</b>`,
+    expiry,
+    bonus,
+    '',
+    '🤝 <b>Referrals</b>',
+    `👥 Invited: <b>${referrals}</b>`,
+    `✅ Completed: <b>${completed}</b>`,
+    '',
+    '<i>A referral becomes completed only after the invited user successfully receives their first video.</i>',
+  ].filter(Boolean).join('\n');
+
+  return ctx.reply(text, {
+    parse_mode: 'HTML',
+    ...Markup.inlineKeyboard([
+      [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
+      [Markup.button.callback('🔄 Refresh Dashboard', 'user:plan')],
+    ]),
+  });
 }
 
 async function sendReferralInfo(ctx: any) {
