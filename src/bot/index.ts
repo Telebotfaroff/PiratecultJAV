@@ -743,6 +743,31 @@ bot.command('start', async (ctx) => {
     return showForceSubAdminMenu(ctx);
   });
 
+  bot.action(/^settings:forcesub:request:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const channels = await getAllForceSubChannels();
+    const channel = channels.find(ch => ch.id === ctx.match[1]);
+    if (!channel) return ctx.answerCbQuery('Channel not found.', { show_alert: true });
+
+    const nextMode = !channel.request_mode;
+    try {
+      // Regenerate the invite so the link itself matches the selected join mode.
+      const invite = await createForceSubInviteLink(bot, channel.channel_id, nextMode);
+      await updateForceSubChannel(channel.id, {
+        request_mode: nextMode,
+        invite_link: invite.inviteLink,
+        title: invite.title,
+      });
+      await ctx.answerCbQuery(nextMode ? 'Request mode enabled.' : 'Request mode disabled.');
+      return showForceSubAdminMenu(ctx);
+    } catch (err: unknown) {
+      return ctx.answerCbQuery(
+        'Could not update invite. Check bot admin permissions.',
+        { show_alert: true },
+      );
+    }
+  });
+
   bot.action(/^settings:forcesub:delete:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await deleteForceSubChannel(ctx.match[1]);
@@ -1722,8 +1747,11 @@ async function showForceSubAdminMenu(ctx: any) {
     [Markup.button.callback('➕ Add Channel', 'settings:forcesub:add')],
   ];
   for (const ch of channels) rows.push([
-    Markup.button.callback((ch.is_active ? '🔴 Disable ' : '🟢 Enable ') + ch.title.slice(0, 18), 'settings:forcesub:toggle-channel:' + ch.id),
-    Markup.button.callback('🗑️ Delete', 'settings:forcesub:delete:' + ch.id),
+    Markup.button.callback((ch.is_active ? '🔴 Disable ' : '🟢 Enable ') + ch.title.slice(0, 14), 'settings:forcesub:toggle-channel:' + ch.id),
+    Markup.button.callback(ch.request_mode ? '📨 Request: ON' : '📨 Request: OFF', 'settings:forcesub:request:' + ch.id),
+  ]);
+  for (const ch of channels) rows.push([
+    Markup.button.callback('🗑️ Delete ' + ch.title.slice(0, 14), 'settings:forcesub:delete:' + ch.id),
   ]);
   rows.push([Markup.button.callback('⬅️ Back', 'settings:main')]);
   if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
