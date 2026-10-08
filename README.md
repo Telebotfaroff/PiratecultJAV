@@ -71,7 +71,7 @@ npm run dev
 npm start
 ```
 
-Health check available at `/health`:
+Health check available at `/health` and readiness check at `/ready`:
 ```json
-{ "ok": true, "service": "PiratecultJAV" }
+{ "ok": true, "service": "PiratecultJAV", "timestamp": "..." }
 ```
