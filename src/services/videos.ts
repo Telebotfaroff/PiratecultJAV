@@ -19,6 +19,13 @@ export interface VideoRecord {
   updated_at?: string;
 }
 
+export type PublicVideoRecord = Omit<VideoRecord, 'dump_chat_id' | 'video_message_id' | 'thumbnail_file_id'>;
+
+export function toPublicVideo(video: VideoRecord): PublicVideoRecord {
+  const { dump_chat_id: _dumpChatId, video_message_id: _videoMessageId, thumbnail_file_id: _thumbnailFileId, ...publicVideo } = video;
+  return publicVideo;
+}
+
 export async function searchVideos(query: string, limit = 24, offset = 0): Promise<{ videos: VideoRecord[]; total: number }> {
   const supabase = getSupabase();
   const trimmed = query.trim();
