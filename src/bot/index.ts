@@ -129,6 +129,7 @@ function createBot(token: string): Telegraf {
 
   bot.catch((err: unknown, ctx) => {
     const info = classifyTelegramError(err);
+    if (info.kind === 'not_modified') return;
     console.error(`[TelegramBot] ${info.kind} on update #${ctx?.update?.update_id || 'unknown'}:`, info.message);
     if (info.kind === 'blocked' || info.kind === 'not_found' || info.kind === 'invalid_chat') return;
     try {
