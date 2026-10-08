@@ -291,6 +291,43 @@ export async function redeemPromoCode(userId: number, code: string): Promise<Pro
   };
 }
 
+export interface PromoAdminRecord {
+  id: string;
+  code: string;
+  reward_type: 'plan' | 'unlimited';
+  reward_plan: 'semi_premium' | 'premium' | null;
+  reward_days: number;
+  max_uses: number | null;
+  used_count: number;
+  expires_at: string | null;
+  is_active: boolean;
+  created_at: string;
+}
+
+export async function listPromoCodes(limit = 20): Promise<PromoAdminRecord[]> {
+  const supabase = getSupabase();
+  const safeLimit = Math.min(Math.max(Math.floor(limit), 1), 50);
+  const { data, error } = await supabase
+    .from('promo_codes')
+    .select('id,code,reward_type,reward_plan,reward_days,max_uses,used_count,expires_at,is_active,created_at')
+    .order('created_at', { ascending: false })
+    .limit(safeLimit);
+  if (error) throw new Error(`Failed loading promo codes: ${error.message}`);
+  return (data || []) as PromoAdminRecord[];
+}
+
+export async function setPromoCodeActive(code: string, active: boolean): Promise<boolean> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('promo_codes')
+    .update({ is_active: active })
+    .eq('code', code.trim().toUpperCase())
+    .select('id')
+    .maybeSingle();
+  if (error) throw new Error(`Failed updating promo code: ${error.message}`);
+  return Boolean(data);
+}
+
 export async function createPromoCode(
   code: string,
   rewardType: 'plan' | 'unlimited',
