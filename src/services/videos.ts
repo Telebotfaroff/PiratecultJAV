@@ -40,11 +40,20 @@ export async function searchVideos(query: string, limit = 24, offset = 0): Promi
     .eq('status', 'available');
 
   if (normalized) {
+    // Code searches are normalized, so ABW001 / ABW-001 / ABW 001 / ABW_001
+    // all resolve to the same canonical code.
+    dbQuery = dbQuery.ilike('normalized_code', '%' + normalized + '%');
+  } else if (trimmed) {
+    // Search the denormalized search_text field so title, description, actress,
+    // studio and genre metadata are searchable from the same input.
+    const searchTerm = trimmed.replace(/[%_]/g, '\\  if (normalized) {
     dbQuery = dbQuery.ilike('normalized_code', '%' + normalized + '%');
   } else if (trimmed) {
     dbQuery = dbQuery.or(
       'title.ilike.%' + trimmed + '%,code.ilike.%' + trimmed + '%,description.ilike.%' + trimmed + '%'
     );
+  }');
+    dbQuery = dbQuery.ilike('search_text', '%' + searchTerm + '%');
   }
 
   const { data, count, error } = await dbQuery
