@@ -193,6 +193,40 @@ export async function getReferralLeaderboard(limit = 10): Promise<ReferralLeader
     .slice(0, safeLimit);
 }
 
+export interface PremiumPaymentResult {
+  success: boolean;
+  message: string;
+  plan_expires_at: string | null;
+}
+
+export async function completeStarPremiumPayment(input: {
+  userId: number;
+  payload: string;
+  durationDays: number;
+  amountStars: number;
+  currency: string;
+  telegramChargeId: string;
+  providerChargeId?: string | null;
+}): Promise<PremiumPaymentResult> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase.rpc('complete_star_premium_payment', {
+    p_user_id: input.userId,
+    p_payload: input.payload,
+    p_duration_days: input.durationDays,
+    p_amount_stars: input.amountStars,
+    p_currency: input.currency,
+    p_telegram_charge_id: input.telegramChargeId,
+    p_provider_charge_id: input.providerChargeId || null,
+  });
+  if (error) throw new Error(`Failed processing premium payment: ${error.message}`);
+  const row = Array.isArray(data) ? data[0] : data;
+  return {
+    success: Boolean(row?.success),
+    message: String(row?.message || 'Payment could not be processed.'),
+    plan_expires_at: row?.plan_expires_at || null,
+  };
+}
+
 export interface PromoRedemptionResult {
   success: boolean;
   message: string;
