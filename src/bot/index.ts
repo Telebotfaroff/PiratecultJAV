@@ -528,7 +528,7 @@ bot.command('start', async (ctx) => {
       '/jobs — View recent index jobs',
       '/retryjob &lt;job_id&gt; — Retry an index job',
       '/test &lt;code&gt; — Test Javtiful metadata',
-      '/addfs &lt;channel_id&gt; | &lt;title&gt; | &lt;invite_link&gt; | request:true',
+      '/addfs &lt;channel_id&gt; [| request:true|false] — Add force-sub; invite link is automatic',
       '/removefs &lt;record_id&gt; — Remove force-sub channel',
       '/cancel — Cancel the current admin operation',
       '',
