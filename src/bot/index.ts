@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, consumeVideoDownload, registerReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -70,7 +70,7 @@ function createBot(token: string): Telegraf {
       try {
         const referral = await registerReferral(referrerId, ctx.from.id);
         if (referral.success) {
-          await ctx.reply('🎉 Referral successful! The person who invited you received +1 day of unlimited video access.');
+          await ctx.reply('✅ Referral tracked! The inviter will receive +1 day of unlimited access after you successfully receive your first video.');
         }
       } catch (err) {
         console.warn('[Referral] Failed:', err instanceof Error ? err.message : String(err));
@@ -1043,6 +1043,21 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
       video.video_message_id,
       `🎬 *${video.code}* - ${video.title}`
     );
+
+    // Referral reward is granted only after the referred user actually receives
+    // their first video. The database function is atomic and one-time.
+    if (ctx.from && !isAdmin(ctx.from.id)) {
+      try {
+        const referral = await completeReferral(ctx.from.id);
+        if (referral.success) {
+          await ctx.reply(
+            '🎉 Referral completed! Your inviter earned +1 day of unlimited video access.'
+          );
+        }
+      } catch (err) {
+        console.warn('[Referral] Completion failed:', err instanceof Error ? err.message : String(err));
+      }
+    }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[TelegramBot] Failed direct video delivery for ${identifier}:`, errMsg);
@@ -1118,7 +1133,7 @@ async function sendReferralInfo(ctx: any) {
   if (!username) return ctx.reply('⚠️ Referral link is temporarily unavailable.');
   const link = `https://t.me/${username}?start=ref_${ctx.from.id}`;
   return ctx.reply(
-    `🔗 <b>Refer & Earn</b>\n\nInvite a new user with your personal link. When the referral is successful, you receive <b>1 day of unlimited video access</b>.\n\n🎬 Free: 20 videos/day\n⚡ Semi Premium: 40 videos/day\n💎 Premium: Unlimited\n\n<b>Your referral link:</b>\n<code>${escapeHtml(link)}</code>`,
+    `🔗 <b>Refer & Earn</b>\n\nInvite a new user with your personal link. After the new user passes required membership checks and successfully receives their first video, you receive <b>1 day of unlimited video access</b>.\n\n🎬 Free: 20 videos/day\n⚡ Semi Premium: 40 videos/day\n💎 Premium: Unlimited\n\n<b>Your referral link:</b>\n<code>${escapeHtml(link)}</code>`,
     { parse_mode: 'HTML' }
   );
 }
