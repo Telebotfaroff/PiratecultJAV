@@ -1,5 +1,6 @@
 import { Telegraf } from 'telegraf';
 import { config } from '../config.ts';
+import { withTelegramRetry } from './telegramErrors.ts';
 
 export interface SendToDumpResult {
   messageId: number;
@@ -17,9 +18,10 @@ export async function sendDumpVideoToUser(
   caption?: string
 ): Promise<boolean> {
   try {
-    await bot.telegram.copyMessage(targetChatId, dumpChatId, videoMessageId, {
-      caption,
-    });
+    await withTelegramRetry(
+      () => bot.telegram.copyMessage(targetChatId, dumpChatId, videoMessageId, { caption }),
+      { label: `dump-copy:${dumpChatId}:${videoMessageId}` },
+    );
     return true;
   } catch (err: unknown) {
     const errorMsg = err instanceof Error ? err.message : String(err);
