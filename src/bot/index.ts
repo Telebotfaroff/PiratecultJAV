@@ -34,7 +34,7 @@ const PREMIUM_PACKAGES = [
 ] as const;
 
 function parsePremiumPayload(payload: string): { days: number; stars: number; userId: number } | null {
-  const match = /^premium:(\\d+):(\\d+):(\\d+)$/.exec(payload);
+  const match = /^premium:(\d+):(\d+):(\d+)$/.exec(payload);
   if (!match) return null;
   const days = Number(match[1]);
   const stars = Number(match[2]);
@@ -199,7 +199,7 @@ bot.command('start', async (ctx) => {
   // Advanced delivery analytics for administrators.
   bot.command('analytics', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const rawHours = Number(ctx.message.text.trim().split(/\\s+/)[1] || '24');
+    const rawHours = Number(ctx.message.text.trim().split(/\s+/)[1] || '24');
     const hours = Number.isFinite(rawHours) ? Math.min(Math.max(Math.floor(rawHours), 1), 168) : 24;
     try {
       const stats = await getVideoDeliveryAnalytics(hours);
@@ -252,7 +252,7 @@ bot.command('start', async (ctx) => {
   bot.command('createpromo', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
 
-    const parts = ctx.message.text.trim().split(/\\s+/);
+    const parts = ctx.message.text.trim().split(/\s+/);
     const code = parts[1]?.trim().toUpperCase();
     const reward = parts[2]?.toLowerCase();
     const days = Number(parts[3]);
@@ -337,7 +337,7 @@ bot.command('start', async (ctx) => {
 
   bot.command('promo', async (ctx) => {
     if (!ctx.from) return;
-    const parts = ctx.message.text.trim().split(/\\s+/);
+    const parts = ctx.message.text.trim().split(/\s+/);
     const code = parts[1]?.trim();
     if (!code) return ctx.reply('Usage: /promo <CODE>');
 
@@ -821,7 +821,7 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
-  bot.action(/^analytics:(\\d+)$/, async (ctx) => {
+  bot.action(/^analytics:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const hours = Math.min(Math.max(Number.parseInt(ctx.match[1], 10) || 24, 1), 168);
     await ctx.answerCbQuery();
