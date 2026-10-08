@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -61,7 +61,7 @@ function createBot(token: string): Telegraf {
   });
 
   // 2. Start command
-    bot.command('dashboard', async (ctx) => sendUserPlan(ctx));
+    bot.command('dashboard', async (ctx) => sendUserPlan(ctx));\n  bot.command('leaderboard', async (ctx) => sendReferralLeaderboard(ctx));
   bot.command('plan', async (ctx) => sendUserPlan(ctx));
 
 bot.command('start', async (ctx) => {
@@ -500,6 +500,12 @@ bot.command('start', async (ctx) => {
     const identifier = ctx.match[1];
     await ctx.answerCbQuery('Fetching video...');
     return deliverVideoToUser(bot, ctx, identifier);
+  });
+
+  bot.action('user:leaderboard', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return sendReferralLeaderboard(ctx);
   });
 
   bot.action('user:plan', async (ctx) => {
@@ -1116,6 +1122,49 @@ async function showAdminVideoEditMenu(ctx: any, videoId: string) {
   return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 }
 
+async function sendReferralLeaderboard(ctx: any) {
+  if (!ctx.from) return;
+
+  try {
+    const entries = await getReferralLeaderboard(10);
+    if (!entries.length) {
+      return ctx.reply(
+        '🏆 <b>Referral Leaderboard</b>\\n\\nNo completed referrals yet. Be the first to invite someone!',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('🔗 Refer & Earn', 'user:referral')], [Markup.button.callback('⬅️ My Dashboard', 'user:plan')]]),
+        },
+      );
+    }
+
+    const lines = ['🏆 <b>Referral Leaderboard</b>', '', '<i>Ranked by completed referrals</i>', ''];
+    entries.forEach((entry, index) => {
+      const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `<b>#${index + 1}</b>`;
+      lines.push(
+        `${medal} <b>${escapeHtml(entry.display_name)}</b> — <b>${entry.completed_referrals}</b> completed / ${entry.total_referrals} invited`,
+      );
+    });
+
+    const mine = entries.findIndex(entry => entry.telegram_user_id === ctx.from.id);
+    if (mine >= 0) {
+      lines.push('', `📍 <b>Your rank:</b> #${mine + 1}`);
+    } else {
+      lines.push('', '📍 <b>Your rank:</b> outside the top 10');
+    }
+
+    return ctx.reply(lines.join('\\n'), {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
+        [Markup.button.callback('⬅️ My Dashboard', 'user:plan')],
+      ]),
+    });
+  } catch (err) {
+    console.error('[Referral] Leaderboard failed:', err);
+    return ctx.reply('⚠️ Could not load the referral leaderboard. Please try again later.');
+  }
+}
+
 async function sendUserPlan(ctx: any) {
   if (!ctx.from) return;
   const dashboard = await getUserDashboard(ctx.from.id);
@@ -1158,7 +1207,7 @@ async function sendUserPlan(ctx: any) {
     parse_mode: 'HTML',
     ...Markup.inlineKeyboard([
       [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
-      [Markup.button.callback('🔄 Refresh Dashboard', 'user:plan')],
+      [Markup.button.callback('🏆 Leaderboard', 'user:leaderboard'), Markup.button.callback('🔄 Refresh', 'user:plan')],
     ]),
   });
 }
