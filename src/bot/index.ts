@@ -3,7 +3,7 @@ import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
 import { searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus } from '../services/videos.ts';
 import { createIndexJob, countJobs, getRecentJobs, retryJob } from '../services/indexJobs.ts';
-import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
+import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard, redeemPromoCode, createPromoCode, completeStarPremiumPayment, consumeVideoDownload, registerReferral, completeReferral, setUserPlan } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
@@ -26,8 +26,101 @@ function availableRole(preferred: 'primary' | 'backup'): 'primary' | 'backup' | 
   return tokenForRole(fallback) ? fallback : null;
 }
 
+const PREMIUM_PACKAGES = [
+  { days: 7, stars: config.premium7Stars, label: '7 Days' },
+  { days: 30, stars: config.premium30Stars, label: '30 Days' },
+  { days: 90, stars: config.premium90Stars, label: '90 Days' },
+] as const;
+
+function parsePremiumPayload(payload: string): { days: number; stars: number; userId: number } | null {
+  const match = /^premium:(\\d+):(\\d+):(\\d+)$/.exec(payload);
+  if (!match) return null;
+  const days = Number(match[1]);
+  const stars = Number(match[2]);
+  const userId = Number(match[3]);
+  const pkg = PREMIUM_PACKAGES.find(item => item.days === days && item.stars === stars);
+  if (!pkg || !Number.isSafeInteger(userId)) return null;
+  return { days, stars, userId };
+}
+
+async function sendPremiumStore(ctx: any) {
+  if (!ctx.from) return;
+  const rows = PREMIUM_PACKAGES.map(pkg => [
+    Markup.button.callback(`💎 ${pkg.label} — ${pkg.stars} ⭐`, `premium:buy:${pkg.days}`),
+  ]);
+  rows.push([Markup.button.callback('⬅️ My Dashboard', 'user:plan')]);
+  return ctx.reply(
+    '💎 <b>Premium Access</b>\\n\\nPremium gives you unlimited video downloads for the selected period.\\n\\nChoose a package:',
+    { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
+  );
+}
+
+async function sendPremiumInvoice(ctx: any, days: number) {
+  if (!ctx.from) return;
+  const pkg = PREMIUM_PACKAGES.find(item => item.days === days);
+  if (!pkg) return ctx.reply('❌ Invalid Premium package.');
+
+  const payload = `premium:${pkg.days}:${pkg.stars}:${ctx.from.id}`;
+  return ctx.replyWithInvoice({
+    title: `Premium — ${pkg.label}`,
+    description: `Unlimited video access for ${pkg.days} days.`,
+    payload,
+    currency: 'XTR',
+    prices: [{ label: `Premium ${pkg.days} days`, amount: pkg.stars }],
+  });
+}
+
 function createBot(token: string): Telegraf {
   const bot = new Telegraf(token);
+
+  bot.on('pre_checkout_query', async (ctx) => {
+    const query = ctx.preCheckoutQuery;
+    const parsed = parsePremiumPayload(query.invoice_payload);
+    const valid = Boolean(
+      parsed &&
+      parsed.userId === query.from.id &&
+      query.currency === 'XTR' &&
+      query.total_amount === parsed.stars
+    );
+    if (!valid) {
+      return ctx.answerPreCheckoutQuery(false, 'This Premium invoice is invalid or has expired.');
+    }
+    return ctx.answerPreCheckoutQuery(true);
+  });
+
+  bot.on('successful_payment', async (ctx) => {
+    if (!ctx.from || !('successful_payment' in ctx.message)) return;
+    const payment = ctx.message.successful_payment;
+    const parsed = parsePremiumPayload(payment.invoice_payload);
+    if (!parsed || parsed.userId !== ctx.from.id) {
+      console.error('[Payment] Rejected malformed successful payment payload.');
+      return;
+    }
+
+    try {
+      const result = await completeStarPremiumPayment({
+        userId: ctx.from.id,
+        payload: payment.invoice_payload,
+        durationDays: parsed.days,
+        amountStars: payment.total_amount,
+        currency: payment.currency,
+        telegramChargeId: payment.telegram_payment_charge_id,
+        providerChargeId: payment.provider_payment_charge_id,
+      });
+
+      if (!result.success) {
+        return ctx.reply(`⚠️ Payment received but Premium activation failed: ${escapeHtml(result.message)}`);
+      }
+
+      return ctx.reply(
+        `🎉 <b>Premium activated!</b>\\n\\n💎 Unlimited access: <b>${parsed.days} days</b>\\n📅 Until: <b>${escapeHtml(result.plan_expires_at ? new Date(result.plan_expires_at).toLocaleString() : 'your current Premium expiry')}</b>`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) },
+      );
+    } catch (err) {
+      console.error('[Payment] Processing failed:', err);
+      return ctx.reply('⚠️ Your payment was received by Telegram, but activation could not be completed automatically. Please contact an admin with your payment receipt.');
+    }
+  });
 
   // Automatically delete bot-created messages according to the admin-configured timer.
   // Dump-channel storage messages are excluded so indexed videos remain available.
@@ -194,6 +287,10 @@ bot.command('start', async (ctx) => {
     }
     const ok = await setUserPlan(userId, plan);
     return ctx.reply(ok ? `✅ User ${userId} set to ${plan}.` : '❌ User not found.');
+  });
+
+  bot.command('premium', async (ctx) => {
+    return sendPremiumStore(ctx);
   });
 
   bot.command('promo', async (ctx) => {
@@ -571,6 +668,12 @@ bot.command('start', async (ctx) => {
     const identifier = ctx.match[1];
     await ctx.answerCbQuery('Fetching video...');
     return deliverVideoToUser(bot, ctx, identifier);
+  });
+
+  bot.action('premium:store', async (ctx) => {\n    if (!ctx.from) return ctx.answerCbQuery();\n    await ctx.answerCbQuery();\n    return sendPremiumStore(ctx);\n  });\n\n  bot.action(/^premium:buy:(\\d+)$/, async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    await ctx.answerCbQuery();
+    return sendPremiumInvoice(ctx, Number(ctx.match[1]));
   });
 
   bot.action('user:promo', async (ctx) => {
@@ -1285,7 +1388,8 @@ async function sendUserPlan(ctx: any) {
     ...Markup.inlineKeyboard([
       [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
       [Markup.button.callback('🎟️ Promo Code', 'user:promo')],
-      [Markup.button.callback('🏆 Leaderboard', 'user:leaderboard'), Markup.button.callback('🔄 Refresh', 'user:plan')],
+      [Markup.button.callback('💎 Buy Premium', 'premium:store'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
+      [Markup.button.callback('🔄 Refresh', 'user:plan')],
     ]),
   });
 }
