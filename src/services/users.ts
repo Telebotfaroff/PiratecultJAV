@@ -8,6 +8,7 @@ export interface UserRecord {
   last_name: string | null;
   is_blocked: boolean;
   plan: 'free' | 'semi_premium' | 'premium';
+  plan_expires_at: string | null;
   daily_download_count: number;
   daily_download_date: string;
   unlimited_until: string | null;
@@ -119,6 +120,65 @@ export async function getUser(telegramUserId: number): Promise<UserRecord | null
     .eq('telegram_user_id', telegramUserId).maybeSingle();
   if (error || !data) return null;
   return data as UserRecord;
+}
+
+export interface UserDashboard {
+  plan: 'free' | 'semi_premium' | 'premium';
+  plan_expires_at: string | null;
+  unlimited_until: string | null;
+  daily_limit: number;
+  daily_used: number;
+  daily_remaining: number;
+  is_unlimited: boolean;
+  referral_count: number;
+  completed_referral_count: number;
+  referred_by: number | null;
+  referral_completed: boolean;
+}
+
+export async function getUserDashboard(telegramUserId: number): Promise<UserDashboard | null> {
+  const supabase = getSupabase();
+  const { data: user, error } = await supabase
+    .from('users')
+    .select('plan,plan_expires_at,unlimited_until,daily_download_count,daily_download_date,referred_by,referral_completed')
+    .eq('telegram_user_id', telegramUserId)
+    .maybeSingle();
+
+  if (error || !user) return null;
+
+  const { count: referralCount } = await supabase
+    .from('users')
+    .select('*', { count: 'exact', head: true })
+    .eq('referred_by', telegramUserId);
+
+  const { count: completedReferralCount } = await supabase
+    .from('users')
+    .select('*', { count: 'exact', head: true })
+    .eq('referred_by', telegramUserId)
+    .eq('referral_completed', true);
+
+  const today = new Date().toISOString().slice(0, 10);
+  const used = user.daily_download_date === today ? Number(user.daily_download_count || 0) : 0;
+  const planExpires = user.plan_expires_at ? new Date(user.plan_expires_at) : null;
+  const planActive = !planExpires || planExpires.getTime() > Date.now();
+  const effectivePlan = planActive ? user.plan : 'free';
+  const bonusActive = Boolean(user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now());
+  const unlimited = effectivePlan === 'premium' || bonusActive;
+  const limit = unlimited ? -1 : effectivePlan === 'semi_premium' ? 40 : 20;
+
+  return {
+    plan: effectivePlan,
+    plan_expires_at: planActive ? user.plan_expires_at : null,
+    unlimited_until: user.unlimited_until || null,
+    daily_limit: limit,
+    daily_used: used,
+    daily_remaining: unlimited ? -1 : Math.max(limit - used, 0),
+    is_unlimited: unlimited,
+    referral_count: Number(referralCount || 0),
+    completed_referral_count: Number(completedReferralCount || 0),
+    referred_by: user.referred_by ? Number(user.referred_by) : null,
+    referral_completed: Boolean(user.referral_completed),
+  };
 }
 
 export async function consumeVideoDownload(telegramUserId: number): Promise<DownloadAllowance> {
