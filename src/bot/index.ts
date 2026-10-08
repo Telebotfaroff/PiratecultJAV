@@ -63,9 +63,9 @@ function createBot(token: string): Telegraf {
   // 2. Start command
   bot.command('start', async (ctx) => {
     const startText = 'text' in ctx.message ? ctx.message.text : '';
-    const payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
+    let payload = startText.replace(/^\/start(?:@\w+)?\s*/i, '').trim();
 
-    if (payload && /^ref_\\d+$/i.test(payload) && ctx.from) {
+    if (payload && /^ref_\d+$/i.test(payload) && ctx.from) {
       const referrerId = Number(payload.slice(4));
       try {
         const referral = await registerReferral(referrerId, ctx.from.id);
@@ -138,7 +138,7 @@ function createBot(token: string): Telegraf {
 
   bot.command('setplan', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const parts = ctx.message.text.trim().split(/\\s+/);
+    const parts = ctx.message.text.trim().split(/\s+/);
     const userId = Number(parts[1]);
     const plan = parts[2] as 'free' | 'semi_premium' | 'premium';
     if (!Number.isSafeInteger(userId) || !['free', 'semi_premium', 'premium'].includes(plan)) {
@@ -221,8 +221,8 @@ function createBot(token: string): Telegraf {
     try {
       const jobs = await getRecentJobs(undefined, 15);
       if (!jobs.length) return ctx.reply('⚙️ No index jobs found.');
-      const lines = jobs.map(j => `#${j.id} · <code>${escapeHtml(j.code)}</code> · <b>${j.status}</b> · attempts ${j.attempts}${j.error ? '\\n   ❌ ' + escapeHtml(j.error.slice(0, 120)) : ''}`);
-      return ctx.reply('⚙️ <b>Recent Index Jobs</b>\\n\\n' + lines.join('\\n'), { parse_mode: 'HTML' });
+      const lines = jobs.map(j => `#${j.id} · <code>${escapeHtml(j.code)}</code> · <b>${j.status}</b> · attempts ${j.attempts}${j.error ? '\n   ❌ ' + escapeHtml(j.error.slice(0, 120)) : ''}`);
+      return ctx.reply('⚙️ <b>Recent Index Jobs</b>\n\n' + lines.join('\n'), { parse_mode: 'HTML' });
     } catch (err: unknown) {
       return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
     }
@@ -230,7 +230,7 @@ function createBot(token: string): Telegraf {
 
   bot.command('retryjob', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const id = Number(ctx.message.text.split(/\\s+/)[1]);
+    const id = Number(ctx.message.text.split(/\s+/)[1]);
     if (!Number.isInteger(id)) return ctx.reply('Usage: /retryjob <job_id>');
     try {
       const job = await retryJob(id);
@@ -242,11 +242,11 @@ function createBot(token: string): Telegraf {
 
   bot.command('test', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const code = normalizeCode(ctx.message.text.replace(/^\\/test\\s*/i, ''));
+    const code = normalizeCode(ctx.message.text.replace(/^\/test\s*/i, ''));
     if (!code) return ctx.reply('Usage: /test <JAV-CODE>');
     try {
       const metadata = await javtifulProvider.getMetadata(code);
-      return ctx.reply(`🧪 <b>Javtiful Test</b>\\n\\n<b>Code:</b> <code>${escapeHtml(metadata.code)}</code>\\n<b>Title:</b> ${escapeHtml(metadata.title)}\\n<b>Actresses:</b> ${escapeHtml(metadata.actresses.join(', ') || 'N/A')}\\n<b>Studio:</b> ${escapeHtml(metadata.studio || 'N/A')}\\n<b>Duration:</b> ${escapeHtml(metadata.duration || 'N/A')}\\n<b>Date:</b> ${escapeHtml(metadata.date || 'N/A')}\\n<b>Genres:</b> ${escapeHtml(metadata.genres.join(', ') || 'N/A')}`, { parse_mode: 'HTML' });
+      return ctx.reply(`🧪 <b>Javtiful Test</b>\n\n<b>Code:</b> <code>${escapeHtml(metadata.code)}</code>\n<b>Title:</b> ${escapeHtml(metadata.title)}\n<b>Actresses:</b> ${escapeHtml(metadata.actresses.join(', ') || 'N/A')}\n<b>Studio:</b> ${escapeHtml(metadata.studio || 'N/A')}\n<b>Duration:</b> ${escapeHtml(metadata.duration || 'N/A')}\n<b>Date:</b> ${escapeHtml(metadata.date || 'N/A')}\n<b>Genres:</b> ${escapeHtml(metadata.genres.join(', ') || 'N/A')}`, { parse_mode: 'HTML' });
     } catch (err: unknown) {
       return ctx.reply('❌ Provider test failed: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
     }
@@ -254,11 +254,11 @@ function createBot(token: string): Telegraf {
 
   bot.command('addfs', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const parts = ctx.message.text.replace(/^\\/addfs\\s*/i, '').trim().split('|').map(v => v.trim());
+    const parts = ctx.message.text.replace(/^\/addfs\s*/i, '').trim().split('|').map(v => v.trim());
     if (parts.length < 2) return ctx.reply('Usage: /addfs channel_id | title | invite_link | request:true');
     try {
       const channel = await upsertForceSubChannel({ channelId: parts[0], title: parts[1], inviteLink: parts[2] || null, requestMode: /^(true|yes|1)$/i.test(parts[3] || ''), isActive: true });
-      return ctx.reply(`✅ Saved: ${channel.title} (${channel.channel_id})\\nRequest mode: ${channel.request_mode ? 'ON' : 'OFF'}`);
+      return ctx.reply(`✅ Saved: ${channel.title} (${channel.channel_id})\nRequest mode: ${channel.request_mode ? 'ON' : 'OFF'}`);
     } catch (err: unknown) {
       return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err)));
     }
@@ -266,7 +266,7 @@ function createBot(token: string): Telegraf {
 
   bot.command('removefs', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const id = ctx.message.text.split(/\\s+/)[1];
+    const id = ctx.message.text.split(/\s+/)[1];
     if (!id) return ctx.reply('Usage: /removefs <channel_record_id>');
     try { await deleteForceSubChannel(id); return ctx.reply('✅ Force-sub channel removed.'); }
     catch (err: unknown) { return ctx.reply('❌ ' + (err instanceof Error ? err.message : String(err))); }
@@ -1025,7 +1025,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string) {
         if (!allowance.allowed) {
           const planText = allowance.plan === 'semi_premium' ? 'Semi Premium (40/day)' : 'Free (20/day)';
           return ctx.reply(
-            `🚫 <b>Daily video limit reached</b>\\n\\nYour plan: <b>${planText}</b>\\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
+            `🚫 <b>Daily video limit reached</b>\n\nYour plan: <b>${planText}</b>\nCome back tomorrow or upgrade to Premium for unlimited videos.`,
             { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Plan', 'user:plan')], [Markup.button.callback('🔗 Refer & Earn', 'user:referral')]]) }
           );
         }
@@ -1107,9 +1107,9 @@ async function sendUserPlan(ctx: any) {
   const remaining = unlimited ? '∞' : String(Math.max(limit - (user.daily_download_date === new Date().toISOString().slice(0,10) ? user.daily_download_count : 0), 0));
   const planName = user.plan === 'premium' ? 'Premium' : user.plan === 'semi_premium' ? 'Semi Premium' : 'Free';
   const reward = user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now()
-    ? `\\n🎁 Referral/bonus unlimited until: <b>${escapeHtml(new Date(user.unlimited_until).toLocaleString())}</b>`
+    ? `\n🎁 Referral/bonus unlimited until: <b>${escapeHtml(new Date(user.unlimited_until).toLocaleString())}</b>`
     : '';
-  return ctx.reply(`📊 <b>Your Plan</b>\\n\\n⭐ Plan: <b>${planName}</b>\\n🎬 Remaining today: <b>${remaining}</b>${reward}\\n\\nFree: 20/day\\nSemi Premium: 40/day\\nPremium: unlimited`, { parse_mode: 'HTML' });
+  return ctx.reply(`📊 <b>Your Plan</b>\n\n⭐ Plan: <b>${planName}</b>\n🎬 Remaining today: <b>${remaining}</b>${reward}\n\nFree: 20/day\nSemi Premium: 40/day\nPremium: unlimited`, { parse_mode: 'HTML' });
 }
 
 async function sendReferralInfo(ctx: any) {
@@ -1118,7 +1118,7 @@ async function sendReferralInfo(ctx: any) {
   if (!username) return ctx.reply('⚠️ Referral link is temporarily unavailable.');
   const link = `https://t.me/${username}?start=ref_${ctx.from.id}`;
   return ctx.reply(
-    `🔗 <b>Refer & Earn</b>\\n\\nInvite a new user with your personal link. When the referral is successful, you receive <b>1 day of unlimited video access</b>.\\n\\n🎬 Free: 20 videos/day\\n⚡ Semi Premium: 40 videos/day\\n💎 Premium: Unlimited\\n\\n<b>Your referral link:</b>\\n<code>${escapeHtml(link)}</code>`,
+    `🔗 <b>Refer & Earn</b>\n\nInvite a new user with your personal link. When the referral is successful, you receive <b>1 day of unlimited video access</b>.\n\n🎬 Free: 20 videos/day\n⚡ Semi Premium: 40 videos/day\n💎 Premium: Unlimited\n\n<b>Your referral link:</b>\n<code>${escapeHtml(link)}</code>`,
     { parse_mode: 'HTML' }
   );
 }
