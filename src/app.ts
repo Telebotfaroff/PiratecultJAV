@@ -4,7 +4,7 @@ import path from 'path';
 import crypto from 'crypto';
 import { config, validateConfig } from './config.ts';
 import { checkSupabaseConnection } from './database/supabase.ts';
-import { countVideos, searchVideos } from './services/videos.ts';
+import { countVideos, searchVideos, getVideoById, toPublicVideo } from './services/videos.ts';
 import { countJobs, createIndexJob, getRecentJobs, retryJob } from './services/indexJobs.ts';
 import { countUsers, getBroadcastUserIds } from './services/users.ts';
 import { javtifulProvider } from './providers/javtiful/index.ts';
@@ -14,6 +14,30 @@ import { isBotActive, getBot, getBotUsername } from './bot/index.ts';
 import { indexerWorker } from './workers/indexer.ts';
 
 const adminSessions = new Map<string, number>();
+
+// Lightweight in-process rate limiter for public catalog endpoints.
+// This protects the persistent server without Redis or another external dependency.
+const publicRateBuckets = new Map<string, { windowStart: number; count: number }>();
+const PUBLIC_RATE_WINDOW_MS = 60_000;
+const PUBLIC_RATE_MAX = 120;
+const PUBLIC_SEARCH_MAX_LENGTH = 120;
+
+function publicRateLimit(req: Request, res: Response, next: express.NextFunction): void {
+  const forwarded = req.headers['x-forwarded-for'];
+  const ip = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.ip || 'unknown';
+  const now = Date.now();
+  const bucket = publicRateBuckets.get(ip);
+  if (!bucket || now - bucket.windowStart >= PUBLIC_RATE_WINDOW_MS) {
+    publicRateBuckets.set(ip, { windowStart: now, count: 1 });
+    return next();
+  }
+  bucket.count++;
+  if (bucket.count > PUBLIC_RATE_MAX) {
+    res.setHeader('Retry-After', '60');
+    return res.status(429).json({ ok: false, error: 'Too many requests. Please try again shortly.' });
+  }
+  next();
+}
 
 function getCookie(req: Request, name: string): string | null {
   const header = req.headers.cookie || '';
@@ -194,9 +218,8 @@ export function createApp(): express.Express {
   });
 
   // Public video details API
-  app.get('/api/videos/:id', async (req: Request, res: Response) => {
+  app.get('/api/videos/:id', publicRateLimit, async (req: Request, res: Response) => {
     try {
-      const { getVideoById } = await import('./services/videos.ts');
       const video = await getVideoById(req.params.id);
 
       if (!video || video.status !== 'available') {
@@ -210,7 +233,7 @@ export function createApp(): express.Express {
 
       return res.json({
         ok: true,
-        video,
+        video: toPublicVideo(video),
         botUrl,
       });
     } catch (err: unknown) {
@@ -220,14 +243,14 @@ export function createApp(): express.Express {
   });
 
   // Videos API: Search & browse
-  app.get('/api/videos', async (req: Request, res: Response) => {
+  app.get('/api/videos', publicRateLimit, async (req: Request, res: Response) => {
     try {
-      const query = (req.query.q as string) || '';
-      const limit = parseInt((req.query.limit as string) || '20', 10);
-      const offset = parseInt((req.query.offset as string) || '0', 10);
+      const query = ((req.query.q as string) || '').trim().slice(0, PUBLIC_SEARCH_MAX_LENGTH);
+      const limit = Math.min(Math.max(parseInt((req.query.limit as string) || '20', 10) || 20, 1), 50);
+      const offset = Math.min(Math.max(parseInt((req.query.offset as string) || '0', 10) || 0, 0), 100000);
 
       const result = await searchVideos(query, limit, offset);
-      res.json({ ok: true, ...result });
+      res.json({ ok: true, videos: result.videos.map(toPublicVideo), total: result.total });
     } catch (err: unknown) {
       const errMsg = err instanceof Error ? err.message : String(err);
       res.status(500).json({ ok: false, error: errMsg });
@@ -236,7 +259,7 @@ export function createApp(): express.Express {
 
   // Public image proxy endpoint. Only known public image hosts are allowed.
   // This prevents the endpoint from becoming an open SSRF proxy.
-  app.get('/api/proxy/image', async (req: Request, res: Response) => {
+  app.get('/api/proxy/image', publicRateLimit, async (req: Request, res: Response) => {
     const ALLOWED_IMAGE_HOSTS = [
       'pics.dmm.co.jp',
       'www.javtiful.com',
