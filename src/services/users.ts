@@ -107,6 +107,43 @@ export async function getBroadcastUserIds(): Promise<number[]> {
 }
 
 
+export interface DownloadQuotaSettings {
+  free: number;
+  semi_premium: number;
+}
+
+const DEFAULT_DOWNLOAD_QUOTAS: DownloadQuotaSettings = { free: 20, semi_premium: 40 };
+
+export async function getDownloadQuotaSettings(): Promise<DownloadQuotaSettings> {
+  const supabase = getSupabase();
+  const { data, error } = await supabase
+    .from('bot_settings')
+    .select('value')
+    .eq('key', 'download_quotas')
+    .maybeSingle();
+  if (error || !data || !data.value || typeof data.value !== 'object') {
+    return { ...DEFAULT_DOWNLOAD_QUOTAS };
+  }
+  const value = data.value as Record<string, unknown>;
+  const free = Number(value.free);
+  const semiPremium = Number(value.semi_premium);
+  return {
+    free: Number.isInteger(free) && free >= 0 ? free : DEFAULT_DOWNLOAD_QUOTAS.free,
+    semi_premium: Number.isInteger(semiPremium) && semiPremium >= 0 ? semiPremium : DEFAULT_DOWNLOAD_QUOTAS.semi_premium,
+  };
+}
+
+export async function setDownloadQuotaSettings(settings: DownloadQuotaSettings): Promise<void> {
+  const supabase = getSupabase();
+  const payload = {
+    key: 'download_quotas',
+    value: settings,
+    updated_at: new Date().toISOString(),
+  };
+  const { error } = await supabase.from('bot_settings').upsert(payload, { onConflict: 'key' });
+  if (error) throw new Error(`Failed saving download quotas: ${error.message}`);
+}
+
 export interface DownloadAllowance {
   allowed: boolean;
   remaining: number;
@@ -305,7 +342,8 @@ export async function getUserDashboard(telegramUserId: number): Promise<UserDash
   const effectivePlan = planActive ? user.plan : 'free';
   const bonusActive = Boolean(user.unlimited_until && new Date(user.unlimited_until).getTime() > Date.now());
   const unlimited = effectivePlan === 'premium' || bonusActive;
-  const limit = unlimited ? -1 : effectivePlan === 'semi_premium' ? 40 : 20;
+  const quotas = await getDownloadQuotaSettings();
+  const limit = unlimited ? -1 : effectivePlan === 'semi_premium' ? quotas.semi_premium : quotas.free;
 
   return {
     plan: effectivePlan,
