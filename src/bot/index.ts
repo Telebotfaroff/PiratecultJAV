@@ -768,8 +768,17 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     const jobs = await getRecentJobs(undefined, 10);
+    const statusIcon = (status: string) => {
+      switch (status) {
+        case 'completed': return '✅';
+        case 'processing': return '🔄';
+        case 'queued': return '⏳';
+        case 'failed': return '❌';
+        default: return '•';
+      }
+    };
     const lines = jobs.length
-      ? jobs.map(j => `#${j.id} · <code>${escapeHtml(j.code)}</code> · <b>${escapeHtml(j.status)}</b>`)
+      ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>`)
       : ['No recent jobs.'];
     return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\\n\\n' + lines.join('\\n'), {
       parse_mode: 'HTML',
