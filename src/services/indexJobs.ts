@@ -264,7 +264,7 @@ export async function getRecentJobs(statusFilter?: string, limit = 50): Promise<
   }
 
   const { data, error } = await query
-    .order('updated_at', { ascending: false })
+    .order('id', { ascending: false })
     .limit(limit);
 
   if (error) {
