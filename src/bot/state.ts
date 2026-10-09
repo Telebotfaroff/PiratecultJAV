@@ -1,4 +1,4 @@
-import type { BotRole } from '../../config.ts';
+import type { BotRole } from '../config.ts';
 
 let activeBotRole: BotRole = 'primary';
 
