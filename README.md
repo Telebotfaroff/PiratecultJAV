@@ -19,6 +19,8 @@ Node.js / Express
 
 The application runs as a single persistent Node.js service. Supabase is used for PostgreSQL data and Telegram is used for bot communication and media storage.
 
+For the source layout and module responsibilities, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+
 ## Requirements
 
 - Node.js 22+
