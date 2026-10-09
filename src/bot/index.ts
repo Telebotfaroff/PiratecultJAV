@@ -88,7 +88,7 @@ bot.command('start', async (ctx) => {
       '<code>JUR-270</code>',
       '',
       'Type your code below.'
-    ].join('\\n');
+    ].join('\n');
 
     return ctx.reply(welcome, { parse_mode: 'HTML' });
   });
@@ -108,8 +108,8 @@ bot.command('start', async (ctx) => {
     const hours = Number.isFinite(rawHours) ? Math.min(Math.max(Math.floor(rawHours), 1), 168) : 24;
     try {
       const stats = await getVideoDeliveryAnalytics(hours);
-      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\\n') : 'No successful deliveries yet.';
-      return ctx.reply('📊 <b>Delivery Analytics</b>\\n\\n⏱ Window: <b>' + hours + 'h</b>\\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\\n🎬 Attempts: <b>' + stats.attempts + '</b>\\n✅ Delivered: <b>' + stats.delivered + '</b>\\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\\n\\n🔥 <b>Top delivered videos</b>\\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:24')], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
+      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\n') : 'No successful deliveries yet.';
+      return ctx.reply('📊 <b>Delivery Analytics</b>\n\n⏱ Window: <b>' + hours + 'h</b>\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\n🎬 Attempts: <b>' + stats.attempts + '</b>\n✅ Delivered: <b>' + stats.delivered + '</b>\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\n\n🔥 <b>Top delivered videos</b>\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:24')], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
     } catch (err) {
       console.error('[Analytics] Failed:', err);
       return ctx.reply('⚠️ Could not load delivery analytics.');
@@ -163,7 +163,7 @@ bot.command('start', async (ctx) => {
         `${i + 1}. 👤 <code>${p.telegram_user_id}</code> · 💎 ${p.duration_days}d · ⭐ ${p.amount_stars} · ${escapeHtml(new Date(p.created_at).toLocaleString())}`
       );
       return ctx.reply(
-        '💳 <b>Recent Premium Payments</b>\\n\\n' + lines.join('\\n'),
+        '💳 <b>Recent Premium Payments</b>\n\n' + lines.join('\n'),
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Monetization', 'admin:monetization')]]) },
       );
     } catch (err) {
@@ -183,7 +183,7 @@ bot.command('start', async (ctx) => {
         const expiry = p.expires_at ? new Date(p.expires_at).toLocaleString() : 'never';
         return `${i + 1}. <code>${escapeHtml(p.code)}</code> · ${p.is_active ? '🟢' : '🔴'} · ${reward} · ${usage} · exp: ${escapeHtml(expiry)}`;
       });
-      return ctx.reply('🎟️ <b>Promo Codes</b>\\n\\n' + lines.join('\\n'), {
+      return ctx.reply('🎟️ <b>Promo Codes</b>\n\n' + lines.join('\n'), {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Monetization', 'admin:monetization')]]),
       });
@@ -231,7 +231,7 @@ bot.command('start', async (ctx) => {
 
     if (!code || !['premium', 'semi_premium', 'unlimited'].includes(reward) || !Number.isInteger(days) || days <= 0) {
       return ctx.reply(
-        'Usage:\\n/createpromo <CODE> <premium|semi_premium|unlimited> <days> [max_uses] [expiry_iso]\\n\\nExample: /createpromo WELCOME30 premium 30 100'
+        'Usage:\n/createpromo <CODE> <premium|semi_premium|unlimited> <days> [max_uses] [expiry_iso]\n\nExample: /createpromo WELCOME30 premium 30 100'
       );
     }
 
@@ -255,7 +255,7 @@ bot.command('start', async (ctx) => {
       if (!ok) return ctx.reply('❌ Could not create promo. The code may already exist or the reward settings are invalid.');
 
       return ctx.reply(
-        `✅ <b>Promo created</b>\\n\\n🎟️ Code: <code>${escapeHtml(code)}</code>\\n🎁 Reward: <b>${rewardType === 'unlimited' ? `Unlimited for ${days} day(s)` : `${rewardPlan} for ${days} day(s)`}</b>\\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>${expiresAt ? `\\n⏰ Expires: <b>${escapeHtml(new Date(expiresAt).toLocaleString())}</b>` : ''}`,
+        `✅ <b>Promo created</b>\n\n🎟️ Code: <code>${escapeHtml(code)}</code>\n🎁 Reward: <b>${rewardType === 'unlimited' ? `Unlimited for ${days} day(s)` : `${rewardPlan} for ${days} day(s)`}</b>\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>${expiresAt ? `\n⏰ Expires: <b>${escapeHtml(new Date(expiresAt).toLocaleString())}</b>` : ''}`,
         { parse_mode: 'HTML' },
       );
     } catch (err) {
@@ -275,12 +275,12 @@ bot.command('start', async (ctx) => {
       const expiry = dashboard.plan_expires_at ? new Date(dashboard.plan_expires_at).toLocaleString() : '—';
       const bonus = dashboard.unlimited_until ? new Date(dashboard.unlimited_until).toLocaleString() : '—';
       return ctx.reply(
-        '👤 <b>User Details</b>\\n\\n' +
-        `🆔 ID: <code>${userId}</code>\\n` +
-        `⭐ Plan: <b>${plan}</b>\\n` +
-        `📅 Plan expiry: <b>${escapeHtml(expiry)}</b>\\n` +
-        `🎁 Unlimited bonus: <b>${escapeHtml(bonus)}</b>\\n` +
-        `🎬 Today: <b>${dashboard.daily_used}/${dashboard.daily_limit}</b>\\n` +
+        '👤 <b>User Details</b>\n\n' +
+        `🆔 ID: <code>${userId}</code>\n` +
+        `⭐ Plan: <b>${plan}</b>\n` +
+        `📅 Plan expiry: <b>${escapeHtml(expiry)}</b>\n` +
+        `🎁 Unlimited bonus: <b>${escapeHtml(bonus)}</b>\n` +
+        `🎬 Today: <b>${dashboard.daily_used}/${dashboard.daily_limit}</b>\n` +
         `🤝 Referrals: <b>${dashboard.completed_referral_count}/${dashboard.referral_count}</b>`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) },
       );
@@ -300,9 +300,9 @@ bot.command('start', async (ctx) => {
     try {
       await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
       return ctx.reply(
-        '✅ <b>Download quotas updated</b>\\n\\n' +
-        `🆓 Free: <b>${free}/day</b>\\n` +
-        `⚡ Semi Premium: <b>${semiPremium}/day</b>\\n` +
+        '✅ <b>Download quotas updated</b>\n\n' +
+        `🆓 Free: <b>${free}/day</b>\n` +
+        `⚡ Semi Premium: <b>${semiPremium}/day</b>\n` +
         '💎 Premium: <b>Unlimited</b>',
         { parse_mode: 'HTML' },
       );
@@ -317,10 +317,10 @@ bot.command('start', async (ctx) => {
     try {
       const q = await getDownloadQuotaSettings();
       return ctx.reply(
-        '📥 <b>Download Quotas</b>\\n\\n' +
-        `🆓 Free: <b>${q.free}/day</b>\\n` +
-        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
-        '💎 Premium: <b>Unlimited</b>\\n\\n' +
+        '📥 <b>Download Quotas</b>\n\n' +
+        `🆓 Free: <b>${q.free}/day</b>\n` +
+        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
+        '💎 Premium: <b>Unlimited</b>\n\n' +
         'Change with <code>/setquota FREE SEMI_PREMIUM</code>.',
         { parse_mode: 'HTML' },
       );
@@ -362,7 +362,7 @@ bot.command('start', async (ctx) => {
         : `${result.reward_plan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} for ${result.reward_days} day(s)`;
 
       return ctx.reply(
-        `🎉 <b>Promo redeemed!</b>\\n\\n🎟️ Code: <code>${escapeHtml(code.toUpperCase())}</code>\\n🎁 Reward: <b>${reward}</b>\\n📅 Until: <b>${result.expires_at ? escapeHtml(new Date(result.expires_at).toLocaleString()) : 'active'}</b>`,
+        `🎉 <b>Promo redeemed!</b>\n\n🎟️ Code: <code>${escapeHtml(code.toUpperCase())}</code>\n🎁 Reward: <b>${reward}</b>\n📅 Until: <b>${result.expires_at ? escapeHtml(new Date(result.expires_at).toLocaleString()) : 'active'}</b>`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) },
       );
     } catch (err) {
@@ -436,7 +436,7 @@ bot.command('start', async (ctx) => {
       }));
       await new Promise(resolve => setTimeout(resolve, 1100));
     }
-    return ctx.reply(`📣 Broadcast finished.\\n\\n✅ Sent: ${sent}\\n❌ Failed: ${failed}`);
+    return ctx.reply(`📣 Broadcast finished.\n\n✅ Sent: ${sent}\n❌ Failed: ${failed}`);
   });
 
   bot.command('jobs', async (ctx) => {
@@ -492,11 +492,11 @@ bot.command('start', async (ctx) => {
         isActive: true,
       });
       return ctx.reply(
-        `✅ <b>Force-sub channel added</b>\\n\\n📢 <b>${escapeHtml(channel.title)}</b>\\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
+        `✅ <b>Force-sub channel added</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
         { parse_mode: 'HTML' },
       );
     } catch (err: unknown) {
-      return ctx.reply('❌ Could not add channel. Make sure the bot is an administrator and can create invite links.\\n\\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+      return ctx.reply('❌ Could not add channel. Make sure the bot is an administrator and can create invite links.\n\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
     }
   });
 
@@ -523,7 +523,7 @@ bot.command('start', async (ctx) => {
       '/promo &lt;CODE&gt;',
       '/referral',
       '/leaderboard'
-    ].join('\\n'), { parse_mode: 'HTML' });
+    ].join('\n'), { parse_mode: 'HTML' });
   });
 
   // Admin command center
@@ -554,8 +554,8 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const users = await countUsers();
     return ctx.editMessageText(
-      '👥 <b>User Management</b>\\n\\n' +
-      `Total users: <b>${users}</b>\\n\\n` +
+      '👥 <b>User Management</b>\n\n' +
+      `Total users: <b>${users}</b>\n\n` +
       'Use the commands below for direct actions:',
       {
         parse_mode: 'HTML',
@@ -572,10 +572,10 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const q = await getDownloadQuotaSettings();
     return ctx.editMessageText(
-      '📥 <b>Download Quotas</b>\\n\\n' +
-      `🆓 Free: <b>${q.free}/day</b>\\n` +
-      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
-      '💎 Premium: <b>Unlimited</b>\\n\\n' +
+      '📥 <b>Download Quotas</b>\n\n' +
+      `🆓 Free: <b>${q.free}/day</b>\n` +
+      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
+      '💎 Premium: <b>Unlimited</b>\n\n' +
       'Use <code>/setquota FREE SEMI_PREMIUM</code> to change the limits.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]) },
     );
@@ -585,12 +585,12 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '💰 <b>Monetization</b>\\n\\n' +
-      `💎 Premium 7d: <b>${config.premium7Stars} ⭐</b>\\n` +
-      `💎 Premium 30d: <b>${config.premium30Stars} ⭐</b>\\n` +
-      `💎 Premium 90d: <b>${config.premium90Stars} ⭐</b>\\n\\n` +
-      '🎟️ Promo codes are managed with <code>/createpromo</code>.\\n' +
-      '👤 Manual access is managed with <code>/setplan</code>.\\n' +
+      '💰 <b>Monetization</b>\n\n' +
+      `💎 Premium 7d: <b>${config.premium7Stars} ⭐</b>\n` +
+      `💎 Premium 30d: <b>${config.premium30Stars} ⭐</b>\n` +
+      `💎 Premium 90d: <b>${config.premium90Stars} ⭐</b>\n\n` +
+      '🎟️ Promo codes are managed with <code>/createpromo</code>.\n' +
+      '👤 Manual access is managed with <code>/setplan</code>.\n' +
       '📥 Daily quotas are managed with <code>/setquota</code>.',
       {
         parse_mode: 'HTML',
@@ -613,7 +613,7 @@ bot.command('start', async (ctx) => {
           return `${i + 1}. <code>${escapeHtml(p.code)}</code> · ${p.is_active ? '🟢 Active' : '🔴 Off'} · ${reward} · ${usage}`;
         })
       : ['No promo codes.'];
-    return ctx.editMessageText('🎟️ <b>Promo Codes</b>\\n\\n' + lines.join('\\n') + '\\n\\nUse <code>/activatepromo CODE</code> or <code>/deactivatepromo CODE</code>.', {
+    return ctx.editMessageText('🎟️ <b>Promo Codes</b>\n\n' + lines.join('\n') + '\n\nUse <code>/activatepromo CODE</code> or <code>/deactivatepromo CODE</code>.', {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:monetization')]]),
     });
@@ -623,10 +623,10 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '🎟️ <b>Promo Management</b>\\n\\n' +
-      '<code>/createpromo CODE premium 30 100</code>\\n' +
-      '<code>/createpromo CODE semi_premium 7</code>\\n' +
-      '<code>/createpromo CODE unlimited 1 50</code>\\n\\n' +
+      '🎟️ <b>Promo Management</b>\n\n' +
+      '<code>/createpromo CODE premium 30 100</code>\n' +
+      '<code>/createpromo CODE semi_premium 7</code>\n' +
+      '<code>/createpromo CODE unlimited 1 50</code>\n\n' +
       'Optional expiry: add an ISO timestamp as the last argument.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:monetization')]]) },
     );
@@ -637,7 +637,7 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const jobs = await countJobs();
     return ctx.editMessageText(
-      '🎬 <b>Content & Indexing</b>\\n\\n' +
+      '🎬 <b>Content & Indexing</b>\n\n' +
       'Use these tools to manage the catalog and indexing pipeline.',
       {
         parse_mode: 'HTML',
@@ -654,7 +654,7 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '📝 <b>Post Video</b>\\n\\nUse <code>/post</code>, enter the JAV code, then send/forward the video.\\n\\nThe bot fetches metadata, stores the video in the dump channel, and creates/updates the catalog record.',
+      '📝 <b>Post Video</b>\n\nUse <code>/post</code>, enter the JAV code, then send/forward the video.\n\nThe bot fetches metadata, stores the video in the dump channel, and creates/updates the catalog record.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')]]) },
     );
   });
@@ -663,7 +663,7 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '🧪 <b>Provider Test</b>\\n\\nUse <code>/test JAV-CODE</code> to fetch and display provider metadata without publishing a video.',
+      '🧪 <b>Provider Test</b>\n\nUse <code>/test JAV-CODE</code> to fetch and display provider metadata without publishing a video.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')]]) },
     );
   });
@@ -684,7 +684,7 @@ bot.command('start', async (ctx) => {
     const lines = jobs.length
       ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>`)
       : ['No recent jobs.'];
-    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\\n\\n' + lines.join('\\n'), {
+    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\n\n' + lines.join('\n'), {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')], [Markup.button.callback('🔄 Refresh', 'admin:jobs')]]),
     });
@@ -694,7 +694,7 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '🛠️ <b>System</b>\\n\\nChoose a system control:',
+      '🛠️ <b>System</b>\n\nChoose a system control:',
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
@@ -751,10 +751,10 @@ bot.command('start', async (ctx) => {
     await setAdminSession(ctx.from.id, 'force_sub_add', 'awaiting_channel');
     await ctx.answerCbQuery();
     return ctx.reply(
-      '➕ <b>Add Force-Sub Channel</b>\\n\\n' +
-      'Add the bot as an administrator in the channel first.\\n\\n' +
-      'Then send:\\n<code>channel_id</code>\\n\\n' +
-      'Optional request mode:\\n<code>channel_id | request:true</code>\\n<code>channel_id | request:false</code>\\n\\n' +
+      '➕ <b>Add Force-Sub Channel</b>\n\n' +
+      'Add the bot as an administrator in the channel first.\n\n' +
+      'Then send:\n<code>channel_id</code>\n\n' +
+      'Optional request mode:\n<code>channel_id | request:true</code>\n<code>channel_id | request:false</code>\n\n' +
       'The bot will automatically read the channel title and create the correct invite link.',
       { parse_mode: 'HTML' },
     );
@@ -837,8 +837,8 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     try {
       const stats = await getVideoDeliveryAnalytics(hours);
-      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\\n') : 'No successful deliveries yet.';
-      return ctx.editMessageText('📊 <b>Delivery Analytics</b>\\n\\n⏱ Window: <b>' + hours + 'h</b>\\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\\n🎬 Attempts: <b>' + stats.attempts + '</b>\\n✅ Delivered: <b>' + stats.delivered + '</b>\\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\\n\\n🔥 <b>Top delivered videos</b>\\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:' + hours)], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
+      const top = stats.topVideos.length ? stats.topVideos.map((item, index) => (index + 1) + '. <code>' + escapeHtml(item.code) + '</code> — ' + item.deliveries).join('\n') : 'No successful deliveries yet.';
+      return ctx.editMessageText('📊 <b>Delivery Analytics</b>\n\n⏱ Window: <b>' + hours + 'h</b>\n👥 Unique users: <b>' + stats.uniqueUsers + '</b>\n🎬 Attempts: <b>' + stats.attempts + '</b>\n✅ Delivered: <b>' + stats.delivered + '</b>\n🔒 Force-sub blocks: <b>' + stats.forceSubBlocks + '</b>\n🚫 Limit blocks: <b>' + stats.limitBlocks + '</b>\n⚠️ Delivery failures: <b>' + stats.failures + '</b>\n\n🔥 <b>Top delivered videos</b>\n' + top, { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'analytics:' + hours)], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) });
     } catch { return ctx.answerCbQuery('Analytics unavailable.', { show_alert: true }); }
   });
   bot.action('settings:stats', async (ctx) => {
@@ -870,10 +870,10 @@ bot.command('start', async (ctx) => {
     const backup = Boolean(config.backupBotToken);
     const active = getStoredActiveBotRole() === 'primary' ? 'PRIMARY' : 'BACKUP';
     return ctx.editMessageText(
-      '🔄 *Bot Recovery*\\n\\n' +
-      '🟢 Active: *' + active + '*\\n' +
-      'Primary token: *' + (primary ? 'configured' : 'missing') + '*\\n' +
-      'Backup token: *' + (backup ? 'configured' : 'missing') + '*\\n\\n' +
+      '🔄 *Bot Recovery*\n\n' +
+      '🟢 Active: *' + active + '*\n' +
+      'Primary token: *' + (primary ? 'configured' : 'missing') + '*\n' +
+      'Backup token: *' + (backup ? 'configured' : 'missing') + '*\n\n' +
       'The backup bot must be added to the same dump and force-sub channels with the required permissions.',
       {
         parse_mode: 'Markdown',
@@ -929,7 +929,7 @@ bot.command('start', async (ctx) => {
   bot.action('user:promo', async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
-    return ctx.reply('🎟️ <b>Redeem Promo</b>\\n\\nUse <code>/promo YOUR_CODE</code> to redeem a promo code.', { parse_mode: 'HTML' });
+    return ctx.reply('🎟️ <b>Redeem Promo</b>\n\nUse <code>/promo YOUR_CODE</code> to redeem a promo code.', { parse_mode: 'HTML' });
   });
 
   bot.action('user:leaderboard', async (ctx) => {
@@ -1248,7 +1248,7 @@ bot.command('start', async (ctx) => {
         }));
         if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
       }
-      return ctx.reply('📣 Broadcast finished.\\n\\n✅ Sent: ' + sent + '\\n❌ Failed: ' + failed);
+      return ctx.reply('📣 Broadcast finished.\n\n✅ Sent: ' + sent + '\n❌ Failed: ' + failed);
     }
 
     if (session.action === 'force_sub_add' && session.step === 'awaiting_channel' && 'text' in ctx.message) {
@@ -1267,11 +1267,11 @@ bot.command('start', async (ctx) => {
         });
         await clearAdminSession(ctx.from.id);
         return ctx.reply(
-          `✅ <b>Force-sub channel saved</b>\\n\\n📢 <b>${escapeHtml(channel.title)}</b>\\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
+          `✅ <b>Force-sub channel saved</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
           { parse_mode: 'HTML' },
         );
       } catch (err: unknown) {
-        return ctx.reply('❌ Could not configure channel. Make sure the bot is an administrator with permission to create invite links.\\n\\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+        return ctx.reply('❌ Could not configure channel. Make sure the bot is an administrator with permission to create invite links.\n\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
       }
     }
 
