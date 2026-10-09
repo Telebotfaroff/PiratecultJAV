@@ -17,6 +17,8 @@ This document describes the current application layout and the responsibility of
 | --- | --- |
 | `src/bot/index.ts` | Telegram bot lifecycle and remaining handler registration |
 | `src/bot/events/payments.ts` | Telegram Stars pre-checkout and successful-payment events |
+| `src/bot/middleware/userTracking.ts` | User profile tracking and blocked-user filtering |
+| `src/bot/middleware/errorHandler.ts` | Central Telegram error handling |
 | `src/bot/premium.ts` | Premium package definitions, invoice creation, and invoice payload validation |
 | `src/bot/state.ts` | Shared bot runtime state used by helper modules |
 | `src/bot/helpers.ts` | Bot helper operations |
@@ -34,6 +36,8 @@ This document describes the current application layout and the responsibility of
 - **Database/business logic:** use or extend the matching module under `src/services/`.
 - **Premium payment event:** edit `src/bot/events/payments.ts`.
 - **Premium package or invoice logic:** edit `src/bot/premium.ts`.
+- **User tracking or blocked-user behavior:** edit `src/bot/middleware/userTracking.ts`.
+- **Telegram error handling:** edit `src/bot/middleware/errorHandler.ts`.
 - **Shared text formatting:** edit `src/bot/helpers/formatting.ts`.
 
 ## Refactoring notes
