@@ -14,12 +14,11 @@ import { classifyTelegramError, withTelegramRetry } from '../services/telegramEr
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 import { deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer } from './helpers.ts';
 import { registerPaymentEvents } from './events/payments.ts';
-import { setActiveBotRole } from './state.ts';
+import { getActiveBotRole as getStoredActiveBotRole, setActiveBotRole } from './state.ts';
 import { PREMIUM_PACKAGES, sendPremiumStore, sendPremiumInvoice } from './premium.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
-let activeBotRole: 'primary' | 'backup' = config.activeBot;
 setActiveBotRole(config.activeBot);
 
 function tokenForRole(role: 'primary' | 'backup'): string {
@@ -890,7 +889,7 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const primary = Boolean(config.botToken);
     const backup = Boolean(config.backupBotToken);
-    const active = activeBotRole === 'primary' ? 'PRIMARY' : 'BACKUP';
+    const active = getStoredActiveBotRole() === 'primary' ? 'PRIMARY' : 'BACKUP';
     return ctx.editMessageText(
       '🔄 *Bot Recovery*\\n\\n' +
       '🟢 Active: *' + active + '*\\n' +
@@ -915,7 +914,7 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery('Switching bot...');
     stopBotPolling();
     botInstance = null;
-    activeBotRole = role;
+    setActiveBotRole(role);
     setActiveBotRole(role);
     const started = await startBotPolling();
     if (!started) {
@@ -1406,7 +1405,7 @@ bot.command('start', async (ctx) => {
 }
 
 export function getActiveBotRole(): 'primary' | 'backup' {
-  return activeBotRole;
+  return getStoredActiveBotRole();
 }
 
 let cachedBotUsername: string | null = null;
@@ -1428,9 +1427,9 @@ export async function getBotUsername(): Promise<string | null> {
 export function getBot(): Telegraf | null {
   if (botInstance) return botInstance;
 
-  const role = availableRole(activeBotRole);
+  const role = availableRole(getStoredActiveBotRole());
   if (!role) return null;
-  activeBotRole = role;
+  setActiveBotRole(role);
 
   const token = tokenForRole(role);
   botInstance = createBot(token);
@@ -1445,7 +1444,7 @@ export async function startBotPolling(): Promise<boolean> {
     return true;
   }
 
-  let role = availableRole(activeBotRole);
+  let role = availableRole(getStoredActiveBotRole());
   if (!role) {
     console.log('[TelegramBot] No bot token configured. Polling not started.');
     return false;
@@ -1488,7 +1487,7 @@ export async function startBotPolling(): Promise<boolean> {
     return false;
   }
 
-  activeBotRole = role;
+  setActiveBotRole(role);
   botInstance = bot;
 
   try {
