@@ -1,164 +1,87 @@
 # Telegram Bot Service
 
-Telegram bot and web service with Supabase PostgreSQL, Telegram storage, and a persistent Node.js server.
-
-## Architecture
-
-```
-Telegram Bot
-     |
-     v
-Node.js / Express
-     |
-     +---- Supabase PostgreSQL
-     |
-     +---- Telegram storage
-     |
-     +---- Background worker
-```
-
-The application runs as a single persistent Node.js service. Supabase is used for PostgreSQL data and Telegram is used for bot communication and media storage.
-
-For the source layout and module responsibilities, see [ARCHITECTURE.md](./ARCHITECTURE.md).
+A TypeScript/Node.js service with an Express API, React frontend, Telegram bot integration, background jobs, and Supabase PostgreSQL.
 
 ## Requirements
 
-- Node.js 22+
+- Node.js 22 or newer
 - npm
-- Supabase project
+- A Supabase project
 - Telegram bot token
-- Linux VPS
 - Git
 
-## Environment Variables
+## Configure
 
-Copy `.env.example` to `.env` and configure the values:
+Copy `.env.example` to `.env` and configure the values required by your deployment.
+
+Required server-side settings include:
 
 ```env
-BOT_TOKEN=your_bot_token
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_SECRET_KEY=your_secret_key
-DUMP_CHAT_ID=your_telegram_chat_id
-ADMIN_IDS=12345678,87654321
+BOT_TOKEN=
+SUPABASE_URL=
+SUPABASE_SECRET_KEY=
+ADMIN_API_KEY=
+DUMP_CHAT_ID=
+ADMIN_IDS=
 PORT=3000
 ```
 
-Use the variables required by `.env.example` for the complete configuration.
+Keep `.env` out of version control. Never expose bot tokens or the Supabase secret key in browser code.
 
-Do not commit `.env` or expose `SUPABASE_SECRET_KEY` or bot tokens.
+## Install and run locally
 
-## Database Setup
+```bash
+npm install
+cp .env.example .env
+npm run lint
+npm run dev
+```
+
+The development command runs the TypeScript server and Vite middleware.
+
+## Production build and start
+
+Install dependencies including development dependencies in the build environment, then run:
+
+```bash
+npm install
+npm run lint
+npm run build
+NODE_ENV=production npm start
+```
+
+The build creates the frontend in `dist/` and bundles the server into `dist-server/server.js`. The production start command runs the compiled server with Node.js, so the production runtime does not depend on the TypeScript runner.
+
+Set the deployment platform's start command to `npm start` and its build command to `npm install && npm run lint && npm run build`.
+
+## Database setup
 
 1. Create a Supabase project.
 2. Open the Supabase SQL Editor.
-3. Apply the migrations from `supabase/migrations/` in order.
-4. Confirm the required tables and functions were created.
-5. Configure the environment variables.
+3. Apply the SQL files in `supabase/migrations/` in numeric order.
+4. Configure the matching environment variables.
+5. Verify that the required tables and database functions exist.
 
-## Local Setup
+## HTTP endpoints
 
-```bash
-git clone https://github.com/Telebotfaroff/Piratecultjav.git
-cd Piratecultjav
+- `/health` — basic process health
+- `/ready` — readiness and critical dependency check
+- `/api/status` — authenticated service diagnostics
 
-npm install
-cp .env.example .env
+Administrative endpoints require an authenticated admin session or the configured admin API key.
 
-npm run lint
-npm start
-```
+## Linux service example
 
-The service exposes:
-
-- `/health` — process health
-- `/ready` — dependency readiness
-
-## VPS Deployment
-
-### 1. Create a VPS
-
-Use any Linux VPS running Ubuntu 22.04 or newer.
-
-Recommended minimum:
-
-- 2 CPU cores
-- 2 GB RAM
-- 20 GB SSD
-- Ubuntu 22.04+
-
-### 2. Install system packages
-
-```bash
-sudo apt update
-sudo apt install -y git curl
-```
-
-Install Node.js 22:
-
-```bash
-curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
-sudo apt install -y nodejs
-
-node -v
-npm -v
-```
-
-### 3. Clone the repository
-
-```bash
-cd /opt
-sudo git clone https://github.com/Telebotfaroff/Piratecultjav.git
-sudo chown -R $USER:$USER /opt/Piratecultjav
-cd /opt/Piratecultjav
-```
-
-### 4. Install dependencies
-
-```bash
-npm install
-```
-
-### 5. Configure environment
-
-```bash
-cp .env.example .env
-nano .env
-```
-
-Add your production values and save the file.
-
-### 6. Test the application
-
-```bash
-npm run lint
-npm start
-```
-
-In another terminal:
-
-```curl http://127.0.0.1:3000/health`
-```
-
-Stop the test process with `Ctrl+C`.
-
-### 7. Create a systemd service
-
-Create the service:
-
-```bash
-sudo nano /etc/systemd/system/telegram-bot-service.service
-```
-
-Use:
+Create `/etc/systemd/system/telegram-bot-service.service` and replace `YOUR_LINUX_USER` with the account that owns the application files:
 
 ```ini
 [Unit]
-Description=Telegram Bot Service Node Service
+Description=Telegram Bot Service
 After=network.target
 
 [Service]
 Type=simple
-User=%i
+User=YOUR_LINUX_USER
 WorkingDirectory=/opt/Piratecultjav
 Environment=NODE_ENV=production
 ExecStart=/usr/bin/npm start
@@ -169,89 +92,35 @@ RestartSec=5
 WantedBy=multi-user.target
 ```
 
-If your VPS username is not suitable for `%i`, replace `User=%i` with your actual Linux username.
-
-Then enable and start it:
+Then run:
 
 ```bash
 sudo systemctl daemon-reload
-sudo systemctl enable telegram-bot-service
-sudo systemctl start telegram-bot-service
-```
-
-Check status:
-
-```bash
+sudo systemctl enable --now telegram-bot-service
 sudo systemctl status telegram-bot-service
 ```
 
-View logs:
+View logs with:
 
 ```bash
 sudo journalctl -u telegram-bot-service -f
 ```
 
-### 8. Restart after an update
-
-```cd /opt/Piratecultjav
-git pull
-npm install
-npm run lint
-sudo systemctl restart telegram-bot-service
-```
-
-Check:
-
-```bash
-curl http://127.0.0.1:3000/ready
-```
-
-A successful readiness response indicates that the application and its critical dependencies are available.
-
-## Updating the VPS
-
-Use:
+After updating the source, rebuild before restarting:
 
 ```bash
 cd /opt/Piratecultjav
 git pull
 npm install
 npm run lint
+npm run build
 sudo systemctl restart telegram-bot-service
 ```
 
-If the service fails after an update:
+## Operational notes
 
-```sudo systemctl status telegram-bot-service
-sudo journalctl -u telegram-bot-service -n 100 --no-pager
-```
-
-## Useful Commands
-
-```bash
-sudo systemctl start telegram-bot-service
-sudo systemctl stop telegram-bot-service
-sudo systemctl restart telegram-bot-service
-sudo systemctl status telegram-bot-service
-sudo journalctl -u telegram-bot-service -f
-```
-
-## Health Checks
-
-```bash
-curl http://127.0.0.1:3000/health
-curl http://127.0.0.1:3000/ready
-```
-
-`/health` confirms that the process is running.
-
-`/ready` checks the critical application dependencies and returns an unsuccessful status when the service is not ready.
-
-## Production Notes
-
-- Keep the VPS firewall enabled.
-- Keep secrets only in `.env`.
-- Never commit production credentials.
-- Use HTTPS if the service is exposed publicly.
-- Keep the Node.js runtime and system packages updated.
-- Use `systemd` so the service automatically restarts after crashes or VPS reboots.
+- Keep secrets in environment variables.
+- Use HTTPS when exposing the service publicly.
+- Keep Node.js and dependencies updated.
+- Ensure only one active polling process uses a given Telegram bot token.
+- Monitor the readiness endpoint and application logs after deployment.

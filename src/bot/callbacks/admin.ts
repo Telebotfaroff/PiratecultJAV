@@ -1,4 +1,5 @@
 import { Telegraf } from 'telegraf';
+import { getActiveBotRole, isBotRoleConfigured, switchBotRole } from '../index.ts';
 import { botDeps } from '../deps.ts';
 const {
   Markup, config, isAdmin, normalizeCode, extractCodes, cleanActressList, cleanTitle,
@@ -347,7 +348,7 @@ export function registerAdminCallbacks(bot: Telegraf) {
       await ctx.answerCbQuery();
       const primary = Boolean(config.botToken);
       const backup = Boolean(config.backupBotToken);
-      const active = activeBotRole === 'primary' ? 'PRIMARY' : 'BACKUP';
+      const active = getActiveBotRole() === 'primary' ? 'PRIMARY' : 'BACKUP';
       return ctx.editMessageText(
         '🔄 *Bot Recovery*\\n\\n' +
         '🟢 Active: *' + active + '*\\n' +
@@ -368,12 +369,9 @@ export function registerAdminCallbacks(bot: Telegraf) {
   bot.action(/^settings:recovery:(primary|backup)$/, async (ctx) => {
       if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
       const role = ctx.match[1] as 'primary' | 'backup';
-      if (!tokenForRole(role)) return ctx.answerCbQuery(`${role === 'primary' ? 'Primary' : 'Backup'} token is not configured.`);
+      if (!isBotRoleConfigured(role)) return ctx.answerCbQuery(`${role === 'primary' ? 'Primary' : 'Backup'} token is not configured.`);
       await ctx.answerCbQuery('Switching bot...');
-      stopBotPolling();
-      botInstance = null;
-      activeBotRole = role;
-      const started = await startBotPolling();
+      const started = await switchBotRole(role);
       if (!started) {
         return ctx.reply('❌ Could not start the selected bot. Check its token and Telegram channel permissions.');
       }

@@ -1486,6 +1486,19 @@ export async function startBotPolling(): Promise<boolean> {
   }
 }
 
+/** Switches polling to the requested configured bot without changing persistent data. */
+export function isBotRoleConfigured(role: 'primary' | 'backup'): boolean {
+  return Boolean(tokenForRole(role));
+}
+
+export async function switchBotRole(role: 'primary' | 'backup'): Promise<boolean> {
+  if (!tokenForRole(role)) return false;
+  stopBotPolling();
+  botInstance = null;
+  setActiveBotRole(role);
+  return startBotPolling();
+}
+
 export function stopBotPolling(): void {
   if (botInstance && isPollingActive) {
     try {
