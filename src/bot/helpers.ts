@@ -184,7 +184,7 @@ async function sendReferralLeaderboard(ctx: any) {
     const entries = await getReferralLeaderboard(10);
     if (!entries.length) {
       return ctx.reply(
-        '🏆 <b>Referral Leaderboard</b>\\n\\nNo completed referrals yet. Be the first to invite someone!',
+        '🏆 <b>Referral Leaderboard</b>\n\nNo completed referrals yet. Be the first to invite someone!',
         {
           parse_mode: 'HTML',
           ...Markup.inlineKeyboard([[Markup.button.callback('🔗 Refer & Earn', 'user:referral')], [Markup.button.callback('⬅️ My Dashboard', 'user:plan')]]),
@@ -207,7 +207,7 @@ async function sendReferralLeaderboard(ctx: any) {
       lines.push('', '📍 <b>Your rank:</b> outside the top 10');
     }
 
-    return ctx.reply(lines.join('\\n'), {
+    return ctx.reply(lines.join('\n'), {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
@@ -410,8 +410,8 @@ async function showForceSubAdminMenu(ctx: any) {
     Markup.button.callback('🗑️ Delete ' + ch.title.slice(0, 14), 'settings:forcesub:delete:' + ch.id),
   ]);
   rows.push([Markup.button.callback('⬅️ Back', 'settings:main')]);
-  if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
-  return ctx.reply(lines.join('\\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+  if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+  return ctx.reply(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
 }
 
 async function showAdminSettings(ctx: any) {
@@ -436,7 +436,7 @@ async function showAdminSettings(ctx: any) {
     `🗑️ Auto Delete: <b>${formatTimer(deleteTimer)}</b>`,
     '',
     'Choose an admin section:',
-  ].join('\\n');
+  ].join('\n');
 
   const keyboard = Markup.inlineKeyboard([
     [Markup.button.callback('📊 Overview', 'admin:overview'), Markup.button.callback('👥 Users', 'admin:users')],
