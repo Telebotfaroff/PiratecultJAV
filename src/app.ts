@@ -23,8 +23,9 @@ const PUBLIC_RATE_MAX = 120;
 const PUBLIC_SEARCH_MAX_LENGTH = 120;
 
 function publicRateLimit(req: Request, res: Response, next: express.NextFunction): void {
-  const forwarded = req.headers['x-forwarded-for'];
-  const ip = typeof forwarded === 'string' ? forwarded.split(',')[0].trim() : req.ip || 'unknown';
+  // Do not trust a client-supplied X-Forwarded-For header. Configure Express
+  // trust proxy explicitly at deployment time if requests arrive through a trusted proxy.
+  const ip = req.ip || req.socket.remoteAddress || 'unknown';
   const now = Date.now();
   const bucket = publicRateBuckets.get(ip);
   if (!bucket || now - bucket.windowStart >= PUBLIC_RATE_WINDOW_MS) {
@@ -79,7 +80,14 @@ function adminOnly(req: Request, res: Response, next: express.NextFunction): voi
 
 export function createApp(): express.Express {
   const app = express();
-  app.use(express.json());
+  app.disable('x-powered-by');
+  app.use((_req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-Frame-Options', 'DENY');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    next();
+  });
+  app.use(express.json({ limit: '100kb' }));
 
   app.post('/api/auth/login', publicRateLimit, (req: Request, res: Response) => {
     if (!config.adminApiKey) {
