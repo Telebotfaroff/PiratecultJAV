@@ -81,7 +81,7 @@ export function createApp(): express.Express {
   const app = express();
   app.use(express.json());
 
-  app.post('/api/auth/login', (req: Request, res: Response) => {
+  app.post('/api/auth/login', publicRateLimit, (req: Request, res: Response) => {
     if (!config.adminApiKey) {
       return res.status(503).json({ ok: false, error: 'ADMIN_API_KEY is not configured' });
     }
@@ -176,7 +176,7 @@ export function createApp(): express.Express {
   });
 
   // System status and diagnostics
-  app.get('/api/status', async (_req: Request, res: Response) => {
+  app.get('/api/status', adminOnly, async (_req: Request, res: Response) => {
     const startTime = Date.now();
     const configValidation = validateConfig();
     const supabaseStatus = await checkSupabaseConnection();
