@@ -16,6 +16,8 @@ import { deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, se
 import { registerPaymentEvents } from './events/payments.ts';
 import { getActiveBotRole as getStoredActiveBotRole, setActiveBotRole } from './state.ts';
 import { PREMIUM_PACKAGES, sendPremiumStore, sendPremiumInvoice } from './premium.ts';
+import { registerTelegramErrorHandler } from './middleware/errorHandler.ts';
+import { registerUserTrackingMiddleware } from './middleware/userTracking.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
@@ -40,33 +42,10 @@ function createBot(token: string): Telegraf {
   // Dump-channel storage messages are excluded so indexed videos remain available.
   installMessageDeleteTimer(bot);
 
-  bot.catch((err: unknown, ctx) => {
-    const info = classifyTelegramError(err);
-    if (info.kind === 'not_modified') return;
-    console.error(`[TelegramBot] ${info.kind} on update #${ctx?.update?.update_id || 'unknown'}:`, info.message);
-    if (info.kind === 'blocked' || info.kind === 'not_found' || info.kind === 'invalid_chat') return;
-    try {
-      void ctx.reply('⚠️ Telegram request failed. Please try again.').catch(() => {});
-    } catch { /* ignore secondary reply failures */ }
-  });
+  registerTelegramErrorHandler(bot);
 
   // 1. User tracking & blocked filter middleware
-  bot.use(async (ctx, next) => {
-    if (ctx.from) {
-      await upsertUser({
-        id: ctx.from.id,
-        username: ctx.from.username,
-        first_name: ctx.from.first_name,
-        last_name: ctx.from.last_name,
-      });
-
-      const blocked = await isUserBlocked(ctx.from.id);
-      if (blocked) {
-        return; // Silently drop updates from blocked users
-      }
-    }
-    return next();
-  });
+  registerUserTrackingMiddleware(bot);
 
   // 2. Start command
   bot.command('dashboard', async (ctx) => sendUserPlan(ctx));
