@@ -968,7 +968,7 @@ bot.command('start', async (ctx) => {
   bot.action('user:referral', async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
-    return sendReferralInfo(ctx);
+    return sendReferralInfo(bot, ctx);
   });
 
   // Admin video management callbacks
