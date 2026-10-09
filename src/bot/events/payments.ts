@@ -1,21 +1,10 @@
-import { Telegraf } from 'telegraf';
-import { botDeps } from '../deps.ts';
-const {
-  Markup, config, isAdmin, normalizeCode, extractCodes, cleanActressList, cleanTitle,
-  searchVideos, getVideoById, getVideoByCode, upsertVideoFromProvider, countVideos, updateVideoMetadata, deleteVideo, updateVideoStatus,
-  createIndexJob, countJobs, getRecentJobs, retryJob,
-  upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUserIds, getUser, getUserDashboard, getReferralLeaderboard,
-  redeemPromoCode, createPromoCode, listPremiumPayments, listPromoCodes, setPromoCodeActive, completeStarPremiumPayment,
-  consumeVideoDownload, refundVideoDownload, getDownloadQuotaSettings, setDownloadQuotaSettings, registerReferral, completeReferral, setUserPlan,
-  checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink,
-  getAdminSession, setAdminSession, clearAdminSession, javtifulProvider, sendDumpVideoToUser, storeThumbnailInDumpChannel,
-  installMessageDeleteTimer, getSetting, setSetting, classifyTelegramError, withTelegramRetry, recordVideoDeliveryEvent, getVideoDeliveryAnalytics,
-  deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery,
-  showForceSubAdminMenu, showAdminSettings, formatTimer, PREMIUM_PACKAGES, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice,
-} = botDeps;
+import { Markup, Telegraf } from 'telegraf';
+import { completeStarPremiumPayment } from '../../services/users.ts';
+import { escapeHtml } from '../helpers/formatting.ts';
+import { parsePremiumPayload } from '../premium.ts';
 
-export function registerPaymentEvents(bot: Telegraf) {
-  bot.on('pre_checkout_query', async (ctx) => {
+export function registerPaymentEvents(bot: Telegraf): void {
+    bot.on('pre_checkout_query', async (ctx) => {
       const query = ctx.preCheckoutQuery;
       const parsed = parsePremiumPayload(query.invoice_payload);
       const valid = Boolean(
@@ -29,8 +18,8 @@ export function registerPaymentEvents(bot: Telegraf) {
       }
       return ctx.answerPreCheckoutQuery(true);
     });
-
-  bot.on('successful_payment', async (ctx) => {
+  
+    bot.on('successful_payment', async (ctx) => {
       if (!ctx.from || !('successful_payment' in ctx.message)) return;
       const payment = ctx.message.successful_payment;
       const parsed = parsePremiumPayload(payment.invoice_payload);
