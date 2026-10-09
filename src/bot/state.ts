@@ -1,30 +1,13 @@
-import type { Telegraf } from 'telegraf';
 import type { BotRole } from '../../config.ts';
 
-let botInstance: Telegraf | null = null;
-let isPollingActive = false;
 let activeBotRole: BotRole = 'primary';
 
-export function getBotInstance(): Telegraf | null {
-  return botInstance;
-}
-
-export function setBotInstance(bot: Telegraf | null): void {
-  botInstance = bot;
-}
-
-export function isPolling(): boolean {
-  return isPollingActive;
-}
-
-export function setPollingActive(active: boolean): void {
-  isPollingActive = active;
-}
-
+/** Returns the bot role currently selected by the runtime. */
 export function getActiveBotRole(): BotRole {
   return activeBotRole;
 }
 
+/** Updates the shared role used by runtime handlers and helper modules. */
 export function setActiveBotRole(role: BotRole): void {
   activeBotRole = role;
 }
