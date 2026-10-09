@@ -44,7 +44,7 @@ The development command runs the TypeScript server and Vite middleware.
 Install dependencies including development dependencies in the build environment, then run:
 
 ```bash
-npm ci
+npm install
 npm run lint
 npm run build
 NODE_ENV=production npm start
@@ -52,7 +52,7 @@ NODE_ENV=production npm start
 
 The build creates the frontend in `dist/` and bundles the server into `dist-server/server.js`. The production start command runs the compiled server with Node.js, so the production runtime does not depend on the TypeScript runner.
 
-Set the deployment platform's start command to `npm start` and its build command to `npm ci && npm run lint && npm run build`.
+Set the deployment platform's start command to `npm start` and its build command to `npm install && npm run lint && npm run build`.
 
 ## Database setup
 
@@ -111,7 +111,7 @@ After updating the source, rebuild before restarting:
 ```bash
 cd /opt/Piratecultjav
 git pull
-npm ci
+npm install
 npm run lint
 npm run build
 sudo systemctl restart telegram-bot-service
