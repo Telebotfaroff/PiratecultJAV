@@ -952,7 +952,7 @@ bot.command('start', async (ctx) => {
     const value = Number(ctx.match[2]);
     if (!Number.isInteger(value) || value < 0 || value > 100000) return ctx.answerCbQuery('Invalid quota.');
     await ctx.answerCbQuery('Saving…');
-    let saved: DownloadQuotaSettings;
+    let saved: { free: number; semi_premium: number };
     try {
       const q = await getDownloadQuotaSettings();
       await setDownloadQuotaSettings({ ...q, [plan]: value });
