@@ -561,10 +561,10 @@ bot.command('start', async (ctx) => {
     try {
       const q = await getDownloadQuotaSettings();
       return ctx.reply(
-        '📥 <b>Daily Download Quotas</b>\\n\\n' +
-        `🆓 Free: <b>${q.free}/day</b>\\n` +
-        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
-        '💎 Premium: <b>Unlimited</b>\\n\\n' +
+        '📥 <b>Daily Download Quotas</b>\n\n' +
+        `🆓 Free: <b>${q.free}/day</b>\n` +
+        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
+        '💎 Premium: <b>Unlimited</b>\n\n' +
         'Tap a preset to update both limits instantly, or use the custom command below.',
         {
           parse_mode: 'HTML',
