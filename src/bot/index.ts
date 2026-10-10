@@ -1102,7 +1102,7 @@ bot.command('start', async (ctx) => {
       }
     };
     const lines = jobs.length
-      ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>${j.error ? '\\n   ❌ ' + escapeHtml(j.error.slice(0, 100)) : ''}`)
+      ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>${j.error ? '\n   ❌ ' + escapeHtml(j.error.slice(0, 100)) : ''}`)
       : ['No recent jobs.'];
     const rows: any[] = [];
     for (const job of jobs) {
@@ -1110,7 +1110,7 @@ bot.command('start', async (ctx) => {
     }
     rows.push([Markup.button.callback('🔄 Refresh', 'admin:jobs')]);
     rows.push([Markup.button.callback('⬅️ Back', 'admin:content')]);
-    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\\n\\n' + lines.join('\\n'), {
+    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\n\n' + lines.join('\n'), {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard(rows),
     });
@@ -1122,7 +1122,7 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '👥 <b>User Management</b>\\n\\nSearch a Telegram user ID to view their plan, daily usage, referral activity, and account status.',
+      '👥 <b>User Management</b>\n\nSearch a Telegram user ID to view their plan, daily usage, referral activity, and account status.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([
         [Markup.button.callback('🔍 Search User', 'admin:users:search')],
         [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
@@ -1135,7 +1135,7 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     await setAdminSession(ctx.from!.id, 'user_lookup', 'awaiting_id');
     return ctx.reply(
-      '🔍 <b>Find User</b>\\n\\nSend the user’s numeric Telegram ID.\\nExample: <code>123456789</code>\\n\\nSend /cancel to stop.',
+      '🔍 <b>Find User</b>\n\nSend the user’s numeric Telegram ID.\nExample: <code>123456789</code>\n\nSend /cancel to stop.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'admin:users:cancel')]]) },
     );
   });
@@ -1144,7 +1144,7 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery('Cancelled');
     await clearAdminSession(ctx.from!.id);
-    return ctx.editMessageText('👥 <b>User Management</b>\\n\\nSearch cancelled.', {
+    return ctx.editMessageText('👥 <b>User Management</b>\n\nSearch cancelled.', {
       parse_mode: 'HTML', ...Markup.inlineKeyboard([
         [Markup.button.callback('🔍 Search User', 'admin:users:search')],
         [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
@@ -1182,7 +1182,7 @@ bot.command('start', async (ctx) => {
       'Remaining today: <b>' + remaining + '</b>',
       'Referrals: <b>' + dashboard.completed_referral_count + '/' + dashboard.referral_count + '</b>',
       dashboard.plan_expires_at ? 'Plan expires: <b>' + escapeHtml(new Date(dashboard.plan_expires_at).toLocaleString()) + '</b>' : '',
-    ].filter(Boolean).join('\\n');
+    ].filter(Boolean).join('\n');
 
     const rows: any[] = [
       [
@@ -1198,14 +1198,14 @@ bot.command('start', async (ctx) => {
     return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
   }
 
-  bot.action(/^admin:user:profile:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:user:profile:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     try { return await showAdminUserProfile(ctx, Number(ctx.match[1])); }
     catch (err) { return ctx.reply('❌ Could not load user profile: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' }); }
   });
 
-  bot.action(/^admin:user:plan:(\\d+):(free|semi_premium|premium)$/, async (ctx) => {
+  bot.action(/^admin:user:plan:(\d+):(free|semi_premium|premium)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const userId = Number(ctx.match[1]);
     const plan = ctx.match[2] as 'free' | 'semi_premium' | 'premium';
@@ -1219,7 +1219,7 @@ bot.command('start', async (ctx) => {
     }
   });
 
-  bot.action(/^admin:user:block:(\\d+):(0|1)$/, async (ctx) => {
+  bot.action(/^admin:user:block:(\d+):(0|1)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const userId = Number(ctx.match[1]);
     const shouldBlock = ctx.match[2] === '1';
@@ -1232,13 +1232,13 @@ bot.command('start', async (ctx) => {
     }
   });
 
-  bot.action(/^admin:job:retry:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:job:retry:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const jobId = Number(ctx.match[1]);
     try {
       const job = await retryJob(jobId);
       await ctx.answerCbQuery('Job queued again.');
-      return ctx.editMessageText('🔄 <b>Job queued again</b>\\n\\n#' + job.id + ' · <code>' + escapeHtml(job.code) + '</code>', {
+      return ctx.editMessageText('🔄 <b>Job queued again</b>\n\n#' + job.id + ' · <code>' + escapeHtml(job.code) + '</code>', {
         parse_mode: 'HTML', ...Markup.inlineKeyboard([
           [Markup.button.callback('⚙️ View Jobs', 'admin:jobs')],
           [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
@@ -1787,7 +1787,7 @@ bot.command('start', async (ctx) => {
         await clearAdminSession(ctx.from.id);
         return ctx.reply('User search cancelled.', { ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ User Management', 'admin:users')]]) });
       }
-      if (!/^\\d{1,20}$/.test(input) || !Number.isSafeInteger(Number(input))) {
+      if (!/^\d{1,20}$/.test(input) || !Number.isSafeInteger(Number(input))) {
         return ctx.reply('❌ Send a valid numeric Telegram user ID, or /cancel.');
       }
       const userId = Number(input);
