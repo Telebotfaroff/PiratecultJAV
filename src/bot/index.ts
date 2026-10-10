@@ -28,6 +28,51 @@ let webhookApp: Express | null = null;
 let webhookRouteRegistered = false;
 setActiveBotRole(config.activeBot);
 
+const START_IMAGES_JSON_URL = 'https://raw.githubusercontent.com/Imtiaz9800/Notification/main/Image.json';
+let cachedStartImageLinks: string[] | null = null;
+const resolvedStartImageUrls = new Map<string, string>();
+
+async function getRandomStartImageUrl(): Promise<string | null> {
+  try {
+    if (!cachedStartImageLinks) {
+      const response = await fetch(START_IMAGES_JSON_URL, { signal: AbortSignal.timeout(8000) });
+      if (!response.ok) throw new Error(`Image list returned HTTP ${response.status}`);
+      const data = await response.json() as { images?: unknown };
+      cachedStartImageLinks = Array.isArray(data.images)
+        ? data.images.filter((url): url is string => typeof url === 'string' && /^https:\\/\\/freeimage\\.host\\/i.test(url))
+        : [];
+    }
+
+    if (!cachedStartImageLinks.length) return null;
+    const candidates = [...cachedStartImageLinks].sort(() => Math.random() - 0.5);
+    for (const pageUrl of candidates.slice(0, Math.min(4, candidates.length))) {
+      const cached = resolvedStartImageUrls.get(pageUrl);
+      if (cached) return cached;
+      try {
+        const response = await fetch(pageUrl, {
+          headers: { 'user-agent': 'Mozilla/5.0 (compatible; PiratecultJAVBot/1.0)' },
+          signal: AbortSignal.timeout(6000),
+        });
+        if (!response.ok) continue;
+        const html = await response.text();
+        const match = html.match(/<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/i)
+          || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']/i);
+        const imageUrl = match?.[1]?.replace(/&amp;/g, '&');
+        if (imageUrl && /^https?:\\/\\//i.test(imageUrl)) {
+          resolvedStartImageUrls.set(pageUrl, imageUrl);
+          return imageUrl;
+        }
+      } catch {
+        // Try another configured image; /start must still work if a host is unavailable.
+      }
+    }
+    return null;
+  } catch (err) {
+    console.warn('[StartImage] Could not load image list:', err instanceof Error ? err.message : String(err));
+    return null;
+  }
+}
+
 function tokenForRole(role: 'primary' | 'backup'): string {
   return role === 'backup' ? config.backupBotToken : config.botToken;
 }
@@ -102,17 +147,29 @@ bot.command('start', async (ctx) => {
       '<i>Choose an option below to get started.</i>'
     ].join('\n');
 
-    return ctx.reply(welcome, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
-        [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium Plans', 'premium:store')],
-        [Markup.button.callback('🎟️ Redeem Promo', 'user:promo')],
-        [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
-        [Markup.button.callback('❓ Help & Support', 'menu:help')],
-        [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
-      ]),
-    });
+    const startKeyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
+      [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium Plans', 'premium:store')],
+      [Markup.button.callback('🎟️ Redeem Promo', 'user:promo')],
+      [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
+      [Markup.button.callback('❓ Help & Support', 'menu:help')],
+      [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
+    ]);
+
+    const startImageUrl = await getRandomStartImageUrl();
+    if (startImageUrl) {
+      try {
+        return await ctx.replyWithPhoto({ url: startImageUrl }, {
+          caption: welcome,
+          parse_mode: 'HTML',
+          ...startKeyboard,
+        });
+      } catch (err) {
+        console.warn('[StartImage] Telegram could not send selected image; falling back to text:', err instanceof Error ? err.message : String(err));
+      }
+    }
+
+    return ctx.reply(welcome, { parse_mode: 'HTML', ...startKeyboard });
   });
 
   // Help and search shortcuts use the same navigation style as the home screen.
