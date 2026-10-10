@@ -81,6 +81,8 @@ CREATE TABLE IF NOT EXISTS admin_sessions (
 CREATE TABLE IF NOT EXISTS force_sub_channels (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
     channel_id TEXT UNIQUE NOT NULL,
+    -- Legacy compatibility alias retained for older deployed databases.
+    chat_id TEXT,
     title TEXT NOT NULL,
     invite_link TEXT,
     request_mode BOOLEAN NOT NULL DEFAULT FALSE,
