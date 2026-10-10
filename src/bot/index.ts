@@ -1220,6 +1220,11 @@ bot.command('start', async (ctx) => {
     return ctx.deleteMessage().catch(() => undefined);
   });
 
+  bot.action('referral:dismiss', async (ctx) => {
+    await ctx.answerCbQuery('No pressure 😎 Invite friends whenever you feel like it.');
+    return ctx.deleteMessage().catch(() => undefined);
+  });
+
 
   async function showQuotaPlanMenu(ctx: any, edit = false) {
     const q = await getDownloadQuotaSettings();
