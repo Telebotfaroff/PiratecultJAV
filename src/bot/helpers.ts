@@ -88,13 +88,24 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
       }
     }
 
+    // Remind the user before sending the video so they have time to forward it.
+    // Bot messages and delivered videos are auto-deleted after 60 seconds.
+    try {
+      await ctx.reply(
+        '⏳ <b>Auto-delete reminder</b>\n\nThis video will be automatically deleted in <b>1 minute</b>. Please forward it to Saved Messages or another chat now if you want to keep it.',
+        { parse_mode: 'HTML' },
+      );
+    } catch (reminderError) {
+      console.warn('[TelegramBot] Could not send auto-delete reminder:', reminderError instanceof Error ? reminderError.message : String(reminderError));
+    }
+
     // 5. Directly deliver the stored video to the user
     await sendDumpVideoToUser(
       bot,
       ctx.chat!.id,
       video.dump_chat_id,
       video.video_message_id,
-      `🎬 *${video.code}* - ${video.title}`
+      `🎬 *${video.code}* - ${video.title}\n\n⏳ Auto-deletes in 1 minute — please forward it now to keep it.`
     );
 
     await recordVideoDeliveryEvent({ eventType: 'delivered', telegramUserId: ctx.from?.id, videoId: video.id, code: video.code, source, success: true });
