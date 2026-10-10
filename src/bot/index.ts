@@ -39,7 +39,7 @@ async function getRandomStartImageUrl(): Promise<string | null> {
       if (!response.ok) throw new Error(`Image list returned HTTP ${response.status}`);
       const data = await response.json() as { images?: unknown };
       cachedStartImageLinks = Array.isArray(data.images)
-        ? data.images.filter((url): url is string => typeof url === 'string' && /^https:\\/\\/freeimage\\.host\\/i.test(url))
+        ? data.images.filter((url): url is string => typeof url === 'string' && url.startsWith('https://freeimage.host/'))
         : [];
     }
 
@@ -58,7 +58,7 @@ async function getRandomStartImageUrl(): Promise<string | null> {
         const match = html.match(/<meta[^>]+(?:property|name)=["'](?:og:image|twitter:image)["'][^>]+content=["']([^"']+)["']/i)
           || html.match(/<meta[^>]+content=["']([^"']+)["'][^>]+(?:property|name)=["'](?:og:image|twitter:image)["']/i);
         const imageUrl = match?.[1]?.replace(/&amp;/g, '&');
-        if (imageUrl && /^https?:\\/\\//i.test(imageUrl)) {
+        if (imageUrl && (imageUrl.startsWith('https://') || imageUrl.startsWith('http://'))) {
           resolvedStartImageUrls.set(pageUrl, imageUrl);
           return imageUrl;
         }
