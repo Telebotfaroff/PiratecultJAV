@@ -1627,7 +1627,7 @@ bot.command('start', async (ctx) => {
       }
       const value = Number(input);
       const plan = session.payload?.plan as 'free' | 'semi_premium' | undefined;
-      if (!plan || !/^\\d+$/.test(input) || !Number.isInteger(value) || value < 0 || value > 100000) {
+      if (!plan || !/^\d+$/.test(input) || !Number.isInteger(value) || value < 0 || value > 100000) {
         return ctx.reply('❌ Send a whole number from 0 to 100000, or /cancel.');
       }
       try {
