@@ -14,7 +14,7 @@ import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
 import { classifyTelegramError, withTelegramRetry } from '../services/telegramErrors.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
-import { deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer } from './helpers.ts';
+import { deliverVideoToUser, downloadAllSearchResults, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer } from './helpers.ts';
 import { registerPaymentEvents } from './events/payments.ts';
 import { getActiveBotRole as getStoredActiveBotRole, setActiveBotRole } from './state.ts';
 import { getPremiumPackages, savePremiumPackage, removePremiumPackage, togglePremiumPackage, sendPremiumStore, sendPremiumInvoice } from './premium.ts';
@@ -1582,6 +1582,59 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     return ctx.deleteMessage().catch(() => undefined);
   });
+  bot.action('downloadall:confirm', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
+      ? ctx.callbackQuery.message.text
+      : '';
+    const match = messageText.match(/Search Results for:\\s*([^\\n]+)/i);
+    if (!match) {
+      await ctx.answerCbQuery('Search query not found. Please search again.', { show_alert: true });
+      return;
+    }
+    const query = match[1].trim();
+    const totalMatch = messageText.match(/Found:\\s*(\\d+)/i);
+    const total = totalMatch ? Number(totalMatch[1]) : 0;
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '⬇️ <b>Confirm Download All</b>\\n\\n🔎 Search: <code>' + escapeHtml(query) + '</code>\\n📚 Matching videos: <b>' + total + '</b>\\n\\nThis sends matching videos to this chat one by one. Each video counts toward your daily allowance, and large searches may take time. Continue?',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Yes, Download All', 'downloadall:run')],
+          [Markup.button.callback('❌ Cancel', 'downloadall:cancel')],
+        ]),
+      },
+    );
+  });
+
+  bot.action('downloadall:run', async (ctx) => {
+    if (!ctx.from) return ctx.answerCbQuery();
+    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
+      ? ctx.callbackQuery.message.text
+      : '';
+    const match = messageText.match(/Search:\\s*([^\\n]+)/i);
+    if (!match) {
+      await ctx.answerCbQuery('Search query not found. Please search again.', { show_alert: true });
+      return;
+    }
+    const query = match[1].trim();
+    await ctx.answerCbQuery('Starting bulk delivery…');
+    await ctx.editMessageText(
+      '⏳ <b>Download All started</b>\\n\\n🔎 Search: <code>' + escapeHtml(query) + '</code>\\nYour matching videos will be sent one by one. Keep this chat open.',
+      { parse_mode: 'HTML' },
+    );
+    return downloadAllSearchResults(bot, ctx, query);
+  });
+
+  bot.action('downloadall:cancel', async (ctx) => {
+    await ctx.answerCbQuery('Canceled.');
+    return ctx.editMessageText(
+      '❌ <b>Download All canceled.</b>\\n\\nUse Search Catalog to run another search.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔎 Search Catalog', 'menu:search')], [Markup.button.callback('🏠 Home', 'menu:home')]]) },
+    );
+  });
+
   // 8. Video download callback query
   bot.action(/^download:(.+)$/, async (ctx) => {
     const identifier = ctx.match[1];
