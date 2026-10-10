@@ -95,7 +95,7 @@ bot.command('start', async (ctx) => {
       '<code>ADN-001</code>  ·  <code>STAR-765</code>',
       '',
       '<i>Choose an option below to get started.</i>'
-    ].join('\\n');
+    ].join('\n');
 
     return ctx.reply(welcome, {
       parse_mode: 'HTML',
@@ -122,7 +122,7 @@ bot.command('start', async (ctx) => {
       '<code>STAR-765</code>',
       '',
       'Use the buttons below to navigate.'
-    ].join('\\n');
+    ].join('\n');
     return ctx.reply(helpText, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
@@ -134,7 +134,7 @@ bot.command('start', async (ctx) => {
 
   bot.command('search', async (ctx) => {
     return ctx.reply(
-      '🔎 <b>Search the catalog</b>\\n\\nSend a video code (for example <code>ADN-001</code>) or a keyword in your next message.',
+      '🔎 <b>Search the catalog</b>\n\nSend a video code (for example <code>ADN-001</code>) or a keyword in your next message.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]) },
     );
   });
@@ -159,7 +159,7 @@ bot.command('start', async (ctx) => {
       '<code>ADN-001</code>  ·  <code>STAR-765</code>',
       '',
       '<i>Choose an option below to get started.</i>'
-    ].join('\\n');
+    ].join('\n');
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
       [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
@@ -173,7 +173,7 @@ bot.command('start', async (ctx) => {
 
   bot.action('menu:search', async (ctx) => {
     await ctx.answerCbQuery();
-    const prompt = '🔎 <b>Search the catalog</b>\\n\\nSend a video code or keyword in your next message.\\n\\nExamples: <code>ADN-001</code>, <code>STAR-765</code>';
+    const prompt = '🔎 <b>Search the catalog</b>\n\nSend a video code or keyword in your next message.\n\nExamples: <code>ADN-001</code>, <code>STAR-765</code>';
     return ctx.reply(prompt, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]),
@@ -194,7 +194,7 @@ bot.command('start', async (ctx) => {
       '<code>STAR-765</code>',
       '',
       'Use the buttons below to navigate.'
-    ].join('\\n');
+    ].join('\n');
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
       [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('🏠 Home', 'menu:home')],
