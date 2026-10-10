@@ -1092,7 +1092,7 @@ bot.command('start', async (ctx) => {
 
   bot.command('setjoinchannel', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setjoinchannel(?:@\\w+)?\\s*/i, '').trim() : '';
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\/setjoinchannel(?:@\w+)?\s*/i, '').trim() : '';
     if (value.toLowerCase() === 'off') {
       await setSetting('notification_join_premium_channel', '');
       return ctx.reply('🔕 User and Premium notifications disabled.');
@@ -1103,7 +1103,7 @@ bot.command('start', async (ctx) => {
 
   bot.command('setnotfoundchannel', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setnotfoundchannel(?:@\\w+)?\\s*/i, '').trim() : '';
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\/setnotfoundchannel(?:@\w+)?\s*/i, '').trim() : '';
     if (value.toLowerCase() === 'off') {
       await setSetting('notification_not_found_channel', '');
       return ctx.reply('🔕 Not-found notifications disabled.');
