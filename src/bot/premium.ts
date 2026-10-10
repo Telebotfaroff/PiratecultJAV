@@ -41,10 +41,11 @@ export async function savePremiumPackage(input: PremiumPackage, previousDays?: n
     throw new Error('Days must be 1–3650, Stars must be 1–1,000,000, and label must be 1–32 characters.');
   }
   const packages = await getPremiumPackages(true);
+  const previous = previousDays === undefined ? undefined : packages.find(item => item.days === previousDays);
   const collision = packages.some(item => item.days === input.days && item.days !== previousDays);
   if (collision) throw new Error('A package with that duration already exists.');
   const next = packages.filter(item => item.days !== previousDays && item.days !== input.days);
-  next.push({ ...input, label: input.label.trim() });
+  next.push({ ...input, active: previous ? previous.active : input.active, label: input.label.trim() });
   await setSetting('premium_packages', next.sort((a, b) => a.days - b.days));
 }
 
