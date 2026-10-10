@@ -684,7 +684,7 @@ bot.command('start', async (ctx) => {
         const free = Number(parts[0]);
         const semiPremium = Number(parts[1]);
         if (![free, semiPremium].every(value => Number.isInteger(value) && value >= 0 && value <= 100000)) {
-          return ctx.reply('Usage: /setquota <free_limit> <semi_premium_limit>\nExample: /setquota 20 40');
+          return ctx.reply('Usage: /setquota <free_limit> <semi_premium_limit>\\nExample: /setquota 20 40');
         }
         await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
       } else if (parts.length === 2 && /^(free|semi_premium)$/i.test(parts[0]) && /^\\d+$/.test(parts[1])) {
@@ -697,15 +697,15 @@ bot.command('start', async (ctx) => {
         await setDownloadQuotaSettings({ ...current, [plan]: value });
       } else {
         return ctx.reply(
-          'Usage:\n/setquota <free_limit> <semi_premium_limit>\n/setquota free <limit>\n/setquota semi_premium <limit>\n\nExample: /setquota 20 40',
+          'Usage:\\n/setquota <free_limit> <semi_premium_limit>\\n/setquota free <limit>\\n/setquota semi_premium <limit>\\n\\nExample: /setquota 20 40',
         );
       }
 
       const saved = await getDownloadQuotaSettings();
       return ctx.reply(
-        '✅ <b>Download quotas saved</b>\n\n' +
-        `🆓 Free: <b>${saved.free}/day</b>\n` +
-        `⚡ Semi Premium: <b>${saved.semi_premium}/day</b>\n` +
+        '✅ <b>Download quotas saved</b>\\n\\n' +
+        `🆓 Free: <b>${saved.free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${saved.semi_premium}/day</b>\\n` +
         '💎 Premium: <b>Unlimited</b>',
         { parse_mode: 'HTML' },
       );
@@ -937,6 +937,10 @@ bot.command('start', async (ctx) => {
   bot.command('setjoinchannel', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
     const value = 'text' in ctx.message ? ctx.message.text.replace(/^\/setjoinchannel(?:@\w+)?\s*/i, '').trim() : '';
+    if (value.toLowerCase() === 'off') {
+      await setSetting('notification_join_premium_channel', '');
+      return ctx.reply('✅ New-user and Premium-purchase notifications disabled.');
+    }
     if (!/^-?\d+$/.test(value)) return ctx.reply('Usage: /setjoinchannel <channel_id>\nExample: /setjoinchannel -1001234567890\nUse /setjoinchannel off to disable.');
     await setSetting('notification_join_premium_channel', value);
     return ctx.reply('✅ New-user and Premium-purchase notifications will be sent to <code>' + escapeHtml(value) + '</code>. Make sure the bot is an administrator in that channel.', { parse_mode: 'HTML' });
@@ -984,10 +988,10 @@ bot.command('start', async (ctx) => {
   async function showQuotaPlanMenu(ctx: any, edit = false) {
     const q = await getDownloadQuotaSettings();
     const text =
-      '📥 <b>Download Quotas</b>\n\n' +
-      `🆓 Free: <b>${q.free}/day</b>\n` +
-      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
-      '💎 Premium: <b>Unlimited</b>\n\n' +
+      '📥 <b>Download Quotas</b>\\n\\n' +
+      `🆓 Free: <b>${q.free}/day</b>\\n` +
+      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
+      '💎 Premium: <b>Unlimited</b>\\n\\n' +
       'Select a plan to edit its quota.';
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🆓 Free', 'admin:quota:plan:free')],
@@ -1019,8 +1023,8 @@ bot.command('start', async (ctx) => {
       const title = plan === 'free' ? '🆓 Free Plan' : plan === 'semi_premium' ? '⚡ Semi Premium Plan' : '💎 Premium Plan';
       const current = plan === 'free' ? q.free : plan === 'semi_premium' ? q.semi_premium : null;
       const body = plan === 'premium'
-        ? `💎 <b>Premium Plan</b>\n\nQuota: <b>Unlimited</b>`
-        : `${title}\n\nCurrent quota: <b>${current}/day</b>`;
+        ? `💎 <b>Premium Plan</b>\\n\\nQuota: <b>Unlimited</b>`
+        : `${title}\\n\\nCurrent quota: <b>${current}/day</b>`;
       const rows: any[] = [];
       if (plan !== 'premium') rows.push([Markup.button.callback('✏️ Edit Quota', `admin:quota:edit:${plan}`)]);
       rows.push([Markup.button.callback('⬅️ All Plans', 'admin:quota')]);
@@ -1049,7 +1053,7 @@ bot.command('start', async (ctx) => {
       rows.push([Markup.button.callback('⌨️ Custom Number', `admin:quota:custom:${plan}`)]);
       rows.push([Markup.button.callback('⬅️ Back', `admin:quota:plan:${plan}`)]);
       return await ctx.editMessageText(
-        `✏️ <b>Edit ${title}</b>\n\nCurrent limit: <b>${current}/day</b>\n\nChoose a new limit or enter a custom number.`,
+        `✏️ <b>Edit ${title}</b>\\n\\nCurrent limit: <b>${current}/day</b>\\n\\nChoose a new limit or enter a custom number.`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
       );
     } catch (err) {
@@ -1078,7 +1082,7 @@ bot.command('start', async (ctx) => {
     const label = plan === 'free' ? 'Free' : 'Semi Premium';
     try {
       return await ctx.editMessageText(
-        `✅ <b>${label} quota saved</b>\n\nNew limit: <b>${value}/day</b>`,
+        `✅ <b>${label} quota saved</b>\\n\\nNew limit: <b>${value}/day</b>`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([
           [Markup.button.callback('✏️ Edit Again', `admin:quota:edit:${plan}`)],
           [Markup.button.callback('📥 All Plans', 'admin:quota')],
@@ -1101,7 +1105,7 @@ bot.command('start', async (ctx) => {
     try {
       await setAdminSession(ctx.from.id, 'quota', 'awaiting_value', { plan });
       return ctx.reply(
-        `⌨️ <b>Custom ${label} quota</b>\n\nSend a whole number from <code>0</code> to <code>100000</code>.\nSend /cancel to cancel.`,
+        `⌨️ <b>Custom ${label} quota</b>\\n\\nSend a whole number from <code>0</code> to <code>100000</code>.\\nSend /cancel to cancel.`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'admin:quota:cancel_custom')]]) },
       );
     } catch (err) {
@@ -1584,7 +1588,7 @@ bot.command('start', async (ctx) => {
         isAdminInChannel
           ? 'The bot can access this channel. Membership checks should work when the bot has the required channel permissions.'
           : 'Add the bot as a channel administrator, then run this test again.',
-      ].join('\n');
+      ].join('\\n');
       return ctx.editMessageText(result, {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
@@ -1605,7 +1609,7 @@ bot.command('start', async (ctx) => {
         '<b>Telegram error:</b> ' + escapeHtml(detail.slice(0, 500)),
         '',
         'Check the channel ID and ensure the bot is added to the channel as an administrator.',
-      ].join('\n');
+      ].join('\\n');
       return ctx.editMessageText(message, {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Test Again', 'settings:forcesub:test:' + channel.id)], [Markup.button.callback('⬅️ Force-sub Settings', 'settings:forcesub')]]),
