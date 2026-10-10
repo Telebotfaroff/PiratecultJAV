@@ -359,7 +359,7 @@ bot.command('start', async (ctx) => {
     const active = promos.filter(p => p.is_active && (!p.expires_at || new Date(p.expires_at).getTime() > now) && (p.max_uses === null || p.used_count < p.max_uses)).length;
     const exhausted = promos.filter(p => p.max_uses !== null && p.used_count >= p.max_uses).length;
     const text = `🎟️ <b>Promo Manager</b>\nPage ${safePage}/${pageCount} · Showing ${pageItems.length} of latest ${promos.length}\n🟢 Available: ${active} · 🚫 Exhausted: ${exhausted}\n\n` + lines.join('\n\n');
-    const rows = [];
+    const rows: any[] = [];
     if (safePage > 1 || safePage < pageCount) {
       const nav = [];
       if (safePage > 1) nav.push(Markup.button.callback('⬅️ Previous', `promos:page:${safePage - 1}`));
