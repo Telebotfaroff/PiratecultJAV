@@ -483,7 +483,6 @@ async function downloadAllSearchResults(bot: Telegraf, ctx: any, rawQuery: strin
       '🔎 Search: <code>' + escapeHtml(query) + '</code>',
       '📚 Matching videos: <b>' + total + '</b>',
       '📤 Delivery attempts: <b>' + processed + '</b>',
-      skippedForQuota ? '' : '',
       skippedForQuota
         ? '🚫 Stopped because your daily download allowance is used up. Upgrade your plan or try again tomorrow.'
         : processed < total
@@ -574,4 +573,4 @@ function formatTimer(seconds: number): string {
   return seconds + ' second(s)';
 }
 
-export { deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer };
+export { deliverVideoToUser, downloadAllSearchResults, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer };
