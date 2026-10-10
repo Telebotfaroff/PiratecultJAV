@@ -1,8 +1,43 @@
 import type { Telegraf } from 'telegraf';
 import { config } from '../config.ts';
+import { getSetting } from './settings.ts';
 import { classifyTelegramError, withTelegramRetry } from './telegramErrors.ts';
 
-const DELETE_AFTER_SECONDS = 60;
+const DELETE_TIMER_KEY = 'delete_timer_seconds';
+const MAX_TIMER_SECONDS = 86400;
+let cachedSeconds = 0;
+let cacheExpiresAt = 0;
+let cacheRefresh: Promise<number> | null = null;
+
+export async function getAutoDeleteSeconds(): Promise<number> {
+  const now = Date.now();
+  if (now < cacheExpiresAt) return cachedSeconds;
+  if (cacheRefresh) return cacheRefresh;
+
+  cacheRefresh = getSetting<number>(DELETE_TIMER_KEY, 0)
+    .then(value => {
+      const seconds = Number(value);
+      cachedSeconds = Number.isFinite(seconds)
+        ? Math.max(0, Math.min(MAX_TIMER_SECONDS, Math.floor(seconds)))
+        : 0;
+      cacheExpiresAt = Date.now() + 2000;
+      return cachedSeconds;
+    })
+    .catch(() => {
+      cacheExpiresAt = Date.now() + 2000;
+      return cachedSeconds;
+    })
+    .finally(() => { cacheRefresh = null; });
+
+  return cacheRefresh;
+}
+
+export function formatAutoDeleteDuration(seconds: number): string {
+  if (seconds % 86400 === 0) return `${seconds / 86400} day(s)`;
+  if (seconds % 3600 === 0) return `${seconds / 3600} hour(s)`;
+  if (seconds % 60 === 0) return `${seconds / 60} minute(s)`;
+  return `${seconds} second(s)`;
+}
 
 export function installMessageDeleteTimer(bot: Telegraf): void {
   const telegram = bot.telegram as any;
@@ -24,6 +59,9 @@ export function installMessageDeleteTimer(bot: Telegraf): void {
     const messageIds = extractMessageIds(result);
     if (messageIds.length === 0) return result;
 
+    const seconds = await getAutoDeleteSeconds();
+    if (seconds <= 0) return result;
+
     const timer = setTimeout(() => {
       void Promise.allSettled(messageIds.map(async messageId => {
         try {
@@ -39,7 +77,7 @@ export function installMessageDeleteTimer(bot: Telegraf): void {
           }
         }
       }));
-    }, DELETE_AFTER_SECONDS * 1000);
+    }, seconds * 1000);
     timer.unref?.();
     return result;
   };
