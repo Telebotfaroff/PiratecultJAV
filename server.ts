@@ -3,7 +3,7 @@ import express from 'express';
 import { createApp } from './src/app.ts';
 import { config } from './src/config.ts';
 import { indexerWorker } from './src/workers/indexer.ts';
-import { startBotPolling } from './src/bot/index.ts';
+import { startBotPolling, startBotWebhook } from './src/bot/index.ts';
 
 async function startServer() {
   const app = createApp();
@@ -48,17 +48,21 @@ async function startServer() {
   // Start background services
   indexerWorker.start();
   
-  if (config.botToken || config.backupBotToken) {
-    startBotPolling().catch(err => {
-      console.warn('[Server] Could not initialize Telegram polling:', err.message);
-    });
-  } else {
-    console.log('[Server] BOT_TOKEN / BACKUP_BOT_TOKEN not provided; Telegram bot polling inactive.');
-  }
-
   app.listen(port, '0.0.0.0', () => {
     console.log(`[PiratecultJAV] Server running on http://0.0.0.0:${port}`);
     console.log(`[PiratecultJAV] Health check available at http://0.0.0.0:${port}/health`);
+
+    if (config.botToken || config.backupBotToken) {
+      // If either webhook variable is supplied, require the complete webhook configuration.
+      // Otherwise retain polling as a backwards-compatible local/development default.
+      const webhookRequested = Boolean(config.webhookUrl || config.webhookSecret);
+      const startBot = webhookRequested ? startBotWebhook(app) : startBotPolling();
+      startBot.catch(err => {
+        console.warn(`[Server] Could not initialize Telegram bot ${webhookRequested ? 'webhook' : 'polling'}:`, err instanceof Error ? err.message : String(err));
+      });
+    } else {
+      console.log('[Server] BOT_TOKEN / BACKUP_BOT_TOKEN not provided; Telegram bot inactive.');
+    }
   });
 }
 
