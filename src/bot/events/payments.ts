@@ -1,5 +1,6 @@
 import { Markup, Telegraf } from 'telegraf';
 import { completeStarPremiumPayment } from '../../services/users.ts';
+import { getSetting } from '../../services/settings.ts';
 import { escapeHtml } from '../helpers/formatting.ts';
 import { parsePremiumPayload } from '../premium.ts';
 
@@ -48,6 +49,26 @@ export function registerPaymentEvents(bot: Telegraf): void {
         return ctx.reply(
           `⚠️ Payment received but Premium activation failed: ${escapeHtml(result.message)}`
         );
+      }
+
+      try {
+        const channel = await getSetting<string>('notification_join_premium_channel', '');
+        if (channel) {
+          const name = [ctx.from.first_name, ctx.from.last_name].filter(Boolean).join(' ') || 'Unknown';
+          const safeName = escapeHtml(name);
+          const safeUsername = escapeHtml(ctx.from.username ? '@' + ctx.from.username : '—');
+          await ctx.telegram.sendMessage(
+            channel,
+            '💎 <b>Premium purchased successfully</b>\n\n👤 User: ' + safeName +
+            '\n🔗 Username: ' + safeUsername +
+            '\n🆔 User ID: <code>' + ctx.from.id + '</code>' +
+            '\n📅 Duration: <b>' + parsed.days + ' days</b>' +
+            '\n⭐ Paid: <b>' + payment.total_amount + ' Stars</b>',
+            { parse_mode: 'HTML' },
+          );
+        }
+      } catch (err) {
+        console.warn('[Notifications] Premium purchase notification failed:', err instanceof Error ? err.message : String(err));
       }
 
       return ctx.reply(
