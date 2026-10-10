@@ -137,7 +137,10 @@ export async function upsertForceSubChannel(params: {
   const { data, error } = await supabase
     .from('force_sub_channels')
     .upsert({
+      // Some existing Supabase deployments still have the legacy chat_id NOT NULL
+      // column. Keep it in sync with channel_id so both old and current schemas work.
       channel_id: params.channelId.trim(),
+      chat_id: params.channelId.trim(),
       title: params.title.trim(),
       invite_link: params.inviteLink?.trim() || null,
       request_mode: Boolean(params.requestMode),
