@@ -830,12 +830,12 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const packages = await getPremiumPackages(true);
     const packageLines = packages.length
-      ? packages.map(pkg => `${pkg.active ? '🟢' : '🔴'} ${escapeHtml(pkg.label)} · ${pkg.days}d · ${pkg.stars} ⭐`).join('\\n')
+      ? packages.map(pkg => `${pkg.active ? '🟢' : '🔴'} ${escapeHtml(pkg.label)} · ${pkg.days}d · ${pkg.stars} ⭐`).join('\n')
       : 'No packages configured.';
     return ctx.editMessageText(
-      '💰 <b>Monetization</b>\\n\\n<b>Premium packages</b>\\n' + packageLines + '\\n\\n' +
-      '🎟️ Promo codes: <code>/createpromo</code>\\n' +
-      '👤 Manual plan assignment: <code>/setplan</code>\\n' +
+      '💰 <b>Monetization</b>\n\n<b>Premium packages</b>\n' + packageLines + '\n\n' +
+      '🎟️ Promo codes: <code>/createpromo</code>\n' +
+      '👤 Manual plan assignment: <code>/setplan</code>\n' +
       '📥 Daily quotas: <code>/setquota</code>.',
       {
         parse_mode: 'HTML',
@@ -851,7 +851,7 @@ bot.command('start', async (ctx) => {
   async function showPremiumPackageManager(ctx: any) {
     const packages = await getPremiumPackages(true);
     const lines = packages.length
-      ? packages.map(pkg => `${pkg.active ? '🟢 Active' : '🔴 Disabled'} · <b>${escapeHtml(pkg.label)}</b> — ${pkg.days} days / ${pkg.stars} ⭐`).join('\\n')
+      ? packages.map(pkg => `${pkg.active ? '🟢 Active' : '🔴 Disabled'} · <b>${escapeHtml(pkg.label)}</b> — ${pkg.days} days / ${pkg.stars} ⭐`).join('\n')
       : 'No packages configured.';
     const rows: any[] = [[Markup.button.callback('➕ Create Custom Package', 'admin:premium_package:add')]];
     for (const pkg of packages) {
@@ -862,7 +862,7 @@ bot.command('start', async (ctx) => {
       rows.push([Markup.button.callback(`🗑️ Remove ${pkg.days}d`, `admin:premium_package:remove_confirm:${pkg.days}`)]);
     }
     rows.push([Markup.button.callback('⬅️ Monetization', 'admin:monetization')]);
-    const text = '💎 <b>Premium Plan Manager</b>\\n\\nCreate custom durations and Stars prices, edit labels/prices, or enable/disable packages.\\n\\n' + lines + '\\n\\n<i>Customers only see active packages.</i>';
+    const text = '💎 <b>Premium Plan Manager</b>\n\nCreate custom durations and Stars prices, edit labels/prices, or enable/disable packages.\n\n' + lines + '\n\n<i>Customers only see active packages.</i>';
     if (ctx.callbackQuery) {
       return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) }).catch(() =>
         ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) })
@@ -881,20 +881,20 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await setAdminSession(ctx.from!.id, 'premium_package', 'awaiting_create');
     await ctx.answerCbQuery();
-    return ctx.reply('➕ <b>Create Premium package</b>\\n\\nSend: <code>DAYS STARS LABEL</code>\\nExample: <code>14 90 14 Days</code>\\n\\nDays: 1–3650 · Stars: 1–1000000 · Label: up to 32 characters.\\nUse /cancel to abort.', { parse_mode: 'HTML' });
+    return ctx.reply('➕ <b>Create Premium package</b>\n\nSend: <code>DAYS STARS LABEL</code>\nExample: <code>14 90 14 Days</code>\n\nDays: 1–3650 · Stars: 1–1000000 · Label: up to 32 characters.\nUse /cancel to abort.', { parse_mode: 'HTML' });
   });
 
-  bot.action(/^admin:premium_package:edit:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:premium_package:edit:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const days = Number(ctx.match[1]);
     const pkg = (await getPremiumPackages(true)).find(item => item.days === days);
     if (!pkg) return ctx.answerCbQuery('Package not found.', { show_alert: true });
     await setAdminSession(ctx.from!.id, 'premium_package', 'awaiting_edit', { previousDays: days });
     await ctx.answerCbQuery();
-    return ctx.reply(`✏️ <b>Edit ${escapeHtml(pkg.label)}</b>\\n\\nSend: <code>NEW_DAYS STARS LABEL</code>\\nCurrent: <code>${pkg.days} ${pkg.stars} ${escapeHtml(pkg.label)}</code>\\nExample: <code>30 150 30 Days</code>\\n\\nUse /cancel to abort.`, { parse_mode: 'HTML' });
+    return ctx.reply(`✏️ <b>Edit ${escapeHtml(pkg.label)}</b>\n\nSend: <code>NEW_DAYS STARS LABEL</code>\nCurrent: <code>${pkg.days} ${pkg.stars} ${escapeHtml(pkg.label)}</code>\nExample: <code>30 150 30 Days</code>\n\nUse /cancel to abort.`, { parse_mode: 'HTML' });
   });
 
-  bot.action(/^admin:premium_package:toggle:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:premium_package:toggle:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     try {
       const ok = await togglePremiumPackage(Number(ctx.match[1]));
@@ -906,13 +906,13 @@ bot.command('start', async (ctx) => {
     }
   });
 
-  bot.action(/^admin:premium_package:remove_confirm:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:premium_package:remove_confirm:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     const days = Number(ctx.match[1]);
     const pkg = (await getPremiumPackages(true)).find(item => item.days === days);
     if (!pkg) return ctx.answerCbQuery('Package not found.', { show_alert: true });
     await ctx.answerCbQuery();
-    return ctx.editMessageText(`⚠️ <b>Remove Premium package?</b>\\n\\n${escapeHtml(pkg.label)} · ${pkg.days} days · ${pkg.stars} ⭐\\n\\nExisting payments are not changed, but new customers won't be able to select this package.`, {
+    return ctx.editMessageText(`⚠️ <b>Remove Premium package?</b>\n\n${escapeHtml(pkg.label)} · ${pkg.days} days · ${pkg.stars} ⭐\n\nExisting payments are not changed, but new customers won't be able to select this package.`, {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🗑️ Yes, remove', `admin:premium_package:remove:${days}`)],
@@ -921,7 +921,7 @@ bot.command('start', async (ctx) => {
     });
   });
 
-  bot.action(/^admin:premium_package:remove:(\\d+)$/, async (ctx) => {
+  bot.action(/^admin:premium_package:remove:(\d+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     try {
       const ok = await removePremiumPackage(Number(ctx.match[1]));
@@ -1509,7 +1509,7 @@ bot.command('start', async (ctx) => {
         await clearAdminSession(ctx.from.id);
         return ctx.reply('Premium package edit cancelled.');
       }
-      const parts = input.split(/\\s+/);
+      const parts = input.split(/\s+/);
       const days = Number(parts[0]);
       const stars = Number(parts[1]);
       const label = parts.slice(2).join(' ').trim();
@@ -1522,10 +1522,10 @@ bot.command('start', async (ctx) => {
       try {
         await savePremiumPackage({ days, stars, label, active: true }, previousDays);
         await clearAdminSession(ctx.from.id);
-        await ctx.reply(`✅ Premium package saved\\n\\n💎 ${escapeHtml(label)}\\n📅 Duration: ${days} days\\n⭐ Price: ${stars} Telegram Stars\\n\\nCustomers will see this package in /premium.`, { parse_mode: 'HTML' });
+        await ctx.reply(`✅ Premium package saved\n\n💎 ${escapeHtml(label)}\n📅 Duration: ${days} days\n⭐ Price: ${stars} Telegram Stars\n\nCustomers will see this package in /premium.`, { parse_mode: 'HTML' });
         return showPremiumPackageManager(ctx);
       } catch (err) {
-        return ctx.reply('❌ ' + escapeHtml(err instanceof Error ? err.message : String(err)) + '\\nPlease try again or /cancel.', { parse_mode: 'HTML' });
+        return ctx.reply('❌ ' + escapeHtml(err instanceof Error ? err.message : String(err)) + '\nPlease try again or /cancel.', { parse_mode: 'HTML' });
       }
     }
 
