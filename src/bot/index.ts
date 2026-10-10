@@ -2158,46 +2158,50 @@ bot.command('start', async (ctx) => {
     await handleSearchQuery(ctx, query, page);
   });
 
-  // 11. Dump Channel listener for automated indexing
+  // 11. Dump Channel listener for automated indexing.
+  // IMPORTANT: webhook setup must explicitly subscribe to channel_post updates.
   bot.on('channel_post', async (ctx) => {
     const post = ctx.channelPost;
-    const chatId = String(ctx.chat.id);
+    const chatId = String(ctx.chat.id).trim();
+    const configuredDumpChatId = String(config.dumpChatId || '').trim();
 
-    // Only process dump channel or configured channels
-    if (config.dumpChatId && chatId !== config.dumpChatId) {
+    if (configuredDumpChatId && chatId !== configuredDumpChatId) {
       return;
     }
 
-    // Must be a media item (video, document, animation)
     const hasMedia = 'video' in post || 'document' in post || 'animation' in post;
-    const caption = ('caption' in post ? post.caption : ('text' in post ? post.text : '')) || '';
+    if (!hasMedia) return;
 
-    if (!hasMedia || !caption) {
+    const caption = ('caption' in post ? post.caption : ('text' in post ? post.text : '')) || '';
+    if (!caption.trim()) {
+      console.warn(`[DumpPost] Ignored media message #${post.message_id} in ${chatId}: caption is empty, so no video code can be detected.`);
       return;
     }
 
-    // Extract JAV codes
     const codes = extractCodes(caption);
     if (codes.length === 0) {
+      console.warn(`[DumpPost] Ignored media message #${post.message_id} in ${chatId}: no video code found in caption.`);
       return;
     }
 
     const primaryCode = codes[0];
     const messageId = post.message_id;
+    console.log(`[DumpPost] Detected media message #${messageId} in ${chatId} with code ${primaryCode}`);
 
-    console.log(`[DumpPost] Detected media message #${messageId} with code ${primaryCode}`);
+    try {
+      const result = await createIndexJob({
+        code: primaryCode,
+        dumpChatId: chatId,
+        videoMessageId: messageId,
+      });
 
-    // Create index job with strict duplicate prevention
-    const result = await createIndexJob({
-      code: primaryCode,
-      dumpChatId: chatId,
-      videoMessageId: messageId,
-    });
-
-    if (result.created) {
-      console.log(`[DumpPost] Successfully queued index job #${result.job.id} for ${primaryCode}`);
-    } else {
-      console.log(`[DumpPost] Skipped duplicate media: ${result.reason}`);
+      if (result.created) {
+        console.log(`[DumpPost] Successfully queued index job #${result.job.id} for ${primaryCode}`);
+      } else {
+        console.log(`[DumpPost] Skipped duplicate media: ${result.reason}`);
+      }
+    } catch (err) {
+      console.error(`[DumpPost] Failed to queue message #${messageId} (${primaryCode}):`, err instanceof Error ? err.message : String(err));
     }
   });
 
@@ -2764,7 +2768,7 @@ export async function startBotWebhook(app: Express): Promise<boolean> {
     await bot.telegram.setWebhook(webhookUrl, {
       secret_token: config.webhookSecret,
       max_connections: 40,
-      allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
+      allowed_updates: ['message', 'channel_post', 'callback_query', 'pre_checkout_query'],
       drop_pending_updates: false,
     });
     isWebhookActive = true;
