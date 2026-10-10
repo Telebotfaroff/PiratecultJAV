@@ -2655,12 +2655,48 @@ bot.command('start', async (ctx) => {
         return ctx.replyWithMarkdown(preview);
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        return ctx.reply(`⚠️ Could not fetch metadata: ${errMsg}\nEnter another code or /cancel.`);
+        await setAdminSession(ctx.from.id, 'post', 'awaiting_manual_title', { code });
+        return ctx.reply(
+          `⚠️ Could not fetch metadata for ${code}: ${errMsg}\n\n✍️ Send the post title manually, or use /cancel to stop.`
+        );
       }
     }
 
-    // Step 2: Admin sent video file
-    if (session.step === 'awaiting_video') {
+    // Manual fallback: admin provides a title when provider metadata is unavailable.
+    if (session.step === 'awaiting_manual_title' && 'text' in ctx.message) {
+      const title = ctx.message.text.trim();
+      if (!title) return ctx.reply('Please send a non-empty post title, or /cancel.');
+      const payload = { ...(session.payload || {}), metadata: {
+        code: String(session.payload?.code || ''),
+        title,
+        actresses: [],
+        duration: '',
+        date: '',
+        thumbnailUrl: '',
+      } };
+      await setAdminSession(ctx.from.id, 'post', 'awaiting_thumbnail_url', payload);
+      return ctx.reply('🖼️ Now send the thumbnail image URL (http:// or https://), or type SKIP to continue without a thumbnail.\n\nUse /cancel to stop.');
+    }
+
+    // Manual fallback: collect and validate the thumbnail URL.
+    if (session.step === 'awaiting_thumbnail_url' && 'text' in ctx.message) {
+      const thumbnailUrl = ctx.message.text.trim();
+      const payload = { ...(session.payload || {}) };
+      if (!/^skip$/i.test(thumbnailUrl)) {
+        try {
+          const parsed = new URL(thumbnailUrl);
+          if (!['http:', 'https:'].includes(parsed.protocol)) throw new Error('invalid protocol');
+        } catch {
+          return ctx.reply('That does not look like a valid HTTP(S) URL. Send the thumbnail URL, SKIP, or /cancel.');
+        }
+      }
+      payload.metadata = { ...(payload.metadata || {}), thumbnailUrl: /^skip$/i.test(thumbnailUrl) ? '' : thumbnailUrl };
+      await setAdminSession(ctx.from.id, 'post', 'awaiting_manual_video', payload);
+      return ctx.reply('📤 Now send or forward the video file (video or document), or use /cancel.');
+    }
+
+    // Step 2: Admin sent video file (automatic metadata or manual fallback)
+    if (session.step === 'awaiting_video' || session.step === 'awaiting_manual_video') {
       const msg = ctx.message;
       const isVideo = 'video' in msg || 'document' in msg;
 
