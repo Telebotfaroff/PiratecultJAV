@@ -1587,17 +1587,17 @@ bot.command('start', async (ctx) => {
     const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
       ? ctx.callbackQuery.message.text
       : '';
-    const match = messageText.match(/Search Results for:\\s*([^\\n]+)/i);
+    const match = messageText.match(/Search Results for:\s*([^\n]+)/i);
     if (!match) {
       await ctx.answerCbQuery('Search query not found. Please search again.', { show_alert: true });
       return;
     }
     const query = match[1].trim();
-    const totalMatch = messageText.match(/Found:\\s*(\\d+)/i);
+    const totalMatch = messageText.match(/Found:\s*(\\d+)/i);
     const total = totalMatch ? Number(totalMatch[1]) : 0;
     await ctx.answerCbQuery();
     return ctx.editMessageText(
-      '⬇️ <b>Confirm Download All</b>\\n\\n🔎 Search: <code>' + escapeHtml(query) + '</code>\\n📚 Matching videos: <b>' + total + '</b>\\n\\nThis sends matching videos to this chat one by one. Each video counts toward your daily allowance, and large searches may take time. Continue?',
+      '⬇️ <b>Confirm Download All</b>\n\n🔎 Search: <code>' + escapeHtml(query) + '</code>\n📚 Matching videos: <b>' + total + '</b>\n\nThis sends matching videos to this chat one by one. Each video counts toward your daily allowance, and large searches may take time. Continue?',
       {
         parse_mode: 'HTML',
         ...Markup.inlineKeyboard([
@@ -1613,7 +1613,7 @@ bot.command('start', async (ctx) => {
     const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
       ? ctx.callbackQuery.message.text
       : '';
-    const match = messageText.match(/Search:\\s*([^\\n]+)/i);
+    const match = messageText.match(/Search:\s*([^\n]+)/i);
     if (!match) {
       await ctx.answerCbQuery('Search query not found. Please search again.', { show_alert: true });
       return;
@@ -1621,7 +1621,7 @@ bot.command('start', async (ctx) => {
     const query = match[1].trim();
     await ctx.answerCbQuery('Starting bulk delivery…');
     await ctx.editMessageText(
-      '⏳ <b>Download All started</b>\\n\\n🔎 Search: <code>' + escapeHtml(query) + '</code>\\nYour matching videos will be sent one by one. Keep this chat open.',
+      '⏳ <b>Download All started</b>\n\n🔎 Search: <code>' + escapeHtml(query) + '</code>\nYour matching videos will be sent one by one. Keep this chat open.',
       { parse_mode: 'HTML' },
     );
     return downloadAllSearchResults(bot, ctx, query);
@@ -1630,7 +1630,7 @@ bot.command('start', async (ctx) => {
   bot.action('downloadall:cancel', async (ctx) => {
     await ctx.answerCbQuery('Canceled.');
     return ctx.editMessageText(
-      '❌ <b>Download All canceled.</b>\\n\\nUse Search Catalog to run another search.',
+      '❌ <b>Download All canceled.</b>\n\nUse Search Catalog to run another search.',
       { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🔎 Search Catalog', 'menu:search')], [Markup.button.callback('🏠 Home', 'menu:home')]]) },
     );
   });
