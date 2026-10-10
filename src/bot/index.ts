@@ -537,7 +537,7 @@ bot.command('start', async (ctx) => {
       return ctx.answerCbQuery('This promo wizard expired. Start again.', { show_alert: true });
     }
     await ctx.answerCbQuery();
-    const payload = { ...(session.payload || {}), expiresAt: null };
+    const payload: Record<string, any> = { ...(session.payload || {}), expiresAt: null };
     await setAdminSession(ctx.from!.id, 'promo_create', 'awaiting_confirmation', payload);
     const rewardText = payload.reward === 'unlimited' ? 'Unlimited access' : payload.reward === 'premium' ? 'Premium' : 'Semi Premium';
     const codeText = payload.code === 'AUTO' ? 'Auto-generated on confirmation' : escapeHtml(String(payload.code || ''));
@@ -1888,7 +1888,7 @@ bot.command('start', async (ctx) => {
   });
   bot.action('downloadall:confirm', async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
-    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
+    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && !!ctx.callbackQuery.message && 'text' in ctx.callbackQuery.message
       ? ctx.callbackQuery.message.text
       : '';
     const match = messageText.match(/Search Results for:\s*([^\n]+)/i);
@@ -2266,7 +2266,7 @@ bot.command('start', async (ctx) => {
           }
           expiresAt = parsed.toISOString();
         }
-        const updated = { ...payload, expiresAt };
+        const updated: Record<string, any> = { ...payload, expiresAt };
         await setAdminSession(ctx.from.id, 'promo_create', 'awaiting_confirmation', updated);
         const rewardText = updated.reward === 'unlimited' ? 'Unlimited access' : updated.reward === 'premium' ? 'Premium' : 'Semi Premium';
         const codeText = updated.code === 'AUTO' ? 'Auto-generated on confirmation' : escapeHtml(String(updated.code));
