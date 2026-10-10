@@ -588,7 +588,7 @@ bot.command('start', async (ctx) => {
     if (!ctx.from) return;
     const parts = ctx.message.text.trim().split(/\s+/);
     const code = parts[1]?.trim();
-    if (!code) return ctx.reply('🎟️ <b>Redeem a promo code</b>\\n\\nUse <code>/promo YOUR_CODE</code> to apply a code.\\n\\nCodes are case-insensitive and can be redeemed once per account.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) });
+    if (!code) return ctx.reply('🎟️ <b>Redeem a promo code</b>\n\nUse <code>/promo YOUR_CODE</code> to apply a code.\n\nCodes are case-insensitive and can be redeemed once per account.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) });
 
     try {
       const result = await redeemPromoCode(ctx.from.id, code);
