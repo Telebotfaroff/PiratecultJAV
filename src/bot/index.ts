@@ -1005,38 +1005,55 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
+  async function configureNotificationChannel(ctx: any, type: 'join' | 'notfound', channelId: string) {
+    const key = type === 'join' ? 'notification_join_premium_channel' : 'notification_not_found_channel';
+    try {
+      const me = await ctx.telegram.getMe();
+      const chat = await ctx.telegram.getChat(channelId);
+      const member = await ctx.telegram.getChatMember(channelId, me.id);
+      if (!['administrator', 'creator'].includes(member.status) ||
+          (member.status === 'administrator' && 'can_post_messages' in member && member.can_post_messages === false)) {
+        return ctx.reply('❌ The bot must be an administrator with permission to post in that channel.');
+      }
+      await setSetting(key, String(chat.id));
+      await clearAdminSession(ctx.from.id);
+      return ctx.reply('✅ <b>Destination saved</b>\\n\\n📡 Channel: <code>' + escapeHtml(chat.id) +
+        '</code>\\n\\nSend a test notification to verify delivery.',
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+          [Markup.button.callback('🧪 Send Test Notification', 'notifications:test:' + type)],
+          [Markup.button.callback('⚙️ Notification Settings', 'settings:notifications')],
+        ]) });
+    } catch (err) {
+      console.warn('[NotificationSettings] Channel validation failed:', err instanceof Error ? err.message : String(err));
+      return ctx.reply('❌ Could not validate that channel. Check the ID, add the bot as an administrator with posting permission, and try again.');
+    }
+  }
+
   bot.command('setjoinchannel', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\/setjoinchannel(?:@\w+)?\s*/i, '').trim() : '';
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setjoinchannel(?:@\\w+)?\\s*/i, '').trim() : '';
     if (value.toLowerCase() === 'off') {
       await setSetting('notification_join_premium_channel', '');
-      return ctx.reply('✅ New-user and Premium-purchase notifications disabled.');
+      return ctx.reply('🔕 User and Premium notifications disabled.');
     }
-    if (!/^-?\d+$/.test(value)) return ctx.reply('Usage: /setjoinchannel <channel_id>\nExample: /setjoinchannel -1001234567890\nUse /setjoinchannel off to disable.');
-    await setSetting('notification_join_premium_channel', value);
-    return ctx.reply('✅ New-user and Premium-purchase notifications will be sent to <code>' + escapeHtml(value) + '</code>. Make sure the bot is an administrator in that channel.', { parse_mode: 'HTML' });
+    if (!/^-?\\d+$/.test(value)) return ctx.reply('Usage: /setjoinchannel <channel_id> or /setjoinchannel off');
+    return configureNotificationChannel(ctx, 'join', value);
   });
 
   bot.command('setnotfoundchannel', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\/setnotfoundchannel(?:@\w+)?\s*/i, '').trim() : '';
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setnotfoundchannel(?:@\\w+)?\\s*/i, '').trim() : '';
     if (value.toLowerCase() === 'off') {
       await setSetting('notification_not_found_channel', '');
-      return ctx.reply('✅ Not-found notifications disabled.');
+      return ctx.reply('🔕 Not-found notifications disabled.');
     }
-    if (!/^-?\d+$/.test(value)) return ctx.reply('Usage: /setnotfoundchannel <channel_id>\nExample: /setnotfoundchannel -1001234567890\nUse /setnotfoundchannel off to disable.');
-    await setSetting('notification_not_found_channel', value);
-    return ctx.reply('✅ Not-found search notifications will be sent to <code>' + escapeHtml(value) + '</code>. Make sure the bot is an administrator in that channel.', { parse_mode: 'HTML' });
+    if (!/^-?\\d+$/.test(value)) return ctx.reply('Usage: /setnotfoundchannel <channel_id> or /setnotfoundchannel off');
+    return configureNotificationChannel(ctx, 'notfound', value);
   });
 
   bot.command('notificationchannels', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
-    const joinChannel = await getSetting<string>('notification_join_premium_channel', '');
-    const notFoundChannel = await getSetting<string>('notification_not_found_channel', '');
-    return ctx.reply(
-      '📣 <b>Notification Channels</b>\n\n👤 New users + 💎 Premium purchases: <code>' + escapeHtml(joinChannel || 'Not configured') + '</code>\n🔎 Not-found searches: <code>' + escapeHtml(notFoundChannel || 'Not configured') + '</code>\n\nCommands:\n<code>/setjoinchannel -1001234567890</code>\n<code>/setnotfoundchannel -1001234567890</code>\nUse <code>off</code> with either command to disable it.',
-      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) },
-    );
+    return renderNotificationSettings(ctx, false);
   });
 
   bot.command('admin', async (ctx) => {
@@ -1055,22 +1072,152 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     return showAdminSettings(ctx);
   });
-  bot.action('settings:notifications', async (ctx) => {
-    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
-    await ctx.answerCbQuery();
+  async function renderNotificationSettings(ctx: any, edit = true) {
     const joinChannel = await getSetting<string>('notification_join_premium_channel', '');
     const notFoundChannel = await getSetting<string>('notification_not_found_channel', '');
+    const status = (id: string) => id ? '🟢 <b>Configured</b> · <code>' + escapeHtml(id) + '</code>' : '⚪ <i>Not configured</i>';
     const text =
-      '🔔 <b>Notification Channels</b>\\n\\n' +
-      '👤 <b>New users + Premium purchases</b>\\nCurrent channel: <code>' + escapeHtml(joinChannel || 'Not configured') + '</code>\\n' +
-      'Set: <code>/setjoinchannel -1001234567890</code>\\nDisable: <code>/setjoinchannel off</code>\\n\\n' +
-      '🔎 <b>Not-found searches</b>\\nCurrent channel: <code>' + escapeHtml(notFoundChannel || 'Not configured') + '</code>\\n' +
-      'Set: <code>/setnotfoundchannel -1001234567890</code>\\nDisable: <code>/setnotfoundchannel off</code>\\n\\n' +
-      'Add the bot as an administrator in each destination channel before enabling notifications.';
-    return ctx.editMessageText(text, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'settings:notifications')], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
-    });
+      '🔔 <b>NOTIFICATION CENTER</b>\\n━━━━━━━━━━━━━━━━━━━━\\n\\n' +
+      '👥 <b>User & Premium Alerts</b>\\nNew users and premium purchases\\n' + status(joinChannel) + '\\n\\n' +
+      '🔎 <b>Not-Found Search Alerts</b>\\nSearches with no matching video\\n' + status(notFoundChannel) + '\\n\\n' +
+      'Choose a notification type to configure it. The bot must be an administrator with permission to post.';
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('👥 Configure User Alerts', 'notifications:configure:join')],
+      [Markup.button.callback('🔎 Configure Not-Found Alerts', 'notifications:configure:notfound')],
+      [Markup.button.callback('📊 View Current Configuration', 'notifications:refresh')],
+      [Markup.button.callback('❌ Close', 'notifications:close')],
+      [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+    ]);
+    if (edit) return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  }
+
+  async function notificationKey(type: string): Promise<string> {
+    return type === 'join' ? 'notification_join_premium_channel' : 'notification_not_found_channel';
+  }
+
+  async function renderNotificationType(ctx: any, type: 'join' | 'notfound', edit = true) {
+    const key = await notificationKey(type);
+    const channel = await getSetting<string>(key, '');
+    const title = type === 'join' ? '👥 USER & PREMIUM ALERTS' : '🔎 NOT-FOUND SEARCH ALERTS';
+    const description = type === 'join'
+      ? 'Receive alerts for new users and premium purchases.'
+      : 'Receive alerts when a search returns no matching videos.';
+    const text = title + '\\n━━━━━━━━━━━━━━━━━━━━\\n\\n' + description +
+      '\\n\\n📡 <b>Destination:</b> ' + escapeHtml(channel || 'Not configured') +
+      '\\n\\nChoose how to configure this destination.\\n\\n💡 Add the bot as an administrator with permission to post messages.';
+    const buttons: any[] = [
+      [Markup.button.callback('🆔 Enter Channel ID', 'notifications:input:' + type)],
+      [Markup.button.callback('🔗 Forward Channel Post', 'notifications:forward:' + type)],
+    ];
+    if (channel) {
+      buttons.push([Markup.button.callback('🧪 Test Notification', 'notifications:test:' + type)]);
+      buttons.push([Markup.button.callback('🔕 Disable Notifications', 'notifications:disable:' + type)]);
+    }
+    buttons.push([Markup.button.callback('↩️ Back to Notification Center', 'settings:notifications')]);
+    const keyboard = Markup.inlineKeyboard(buttons);
+    if (edit) return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  }
+
+  bot.action('settings:notifications', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return renderNotificationSettings(ctx, true);
+  });
+
+  bot.action('notifications:refresh', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    await ctx.answerCbQuery('Configuration refreshed.');
+    return renderNotificationSettings(ctx, true);
+  });
+
+  bot.action(/^notifications:configure:(join|notfound)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return renderNotificationType(ctx, ctx.match[1] as 'join' | 'notfound', true);
+  });
+
+  bot.action(/^notifications:input:(join|notfound)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    const type = ctx.match[1] as 'join' | 'notfound';
+    await setAdminSession(ctx.from.id, 'notification_channel', 'awaiting_channel', { type });
+    await ctx.answerCbQuery();
+    return ctx.reply('🆔 <b>Set Destination Channel</b>\\n\\n' +
+      (type === 'join' ? 'User & Premium Alerts' : 'Not-Found Search Alerts') +
+      '\\n\\nSend the channel ID (for example <code>-1001234567890</code>), or forward a post from that channel.\\n\\n' +
+      'Make sure the bot is an administrator with permission to post. Send /cancel to stop.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'notifications:cancel')]]) });
+  });
+
+  bot.action(/^notifications:forward:(join|notfound)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    const type = ctx.match[1] as 'join' | 'notfound';
+    await setAdminSession(ctx.from.id, 'notification_channel', 'awaiting_channel', { type, expectForward: true });
+    await ctx.answerCbQuery();
+    return ctx.reply('🔗 <b>Forward a Channel Post</b>\\n\\nForward any post from the destination channel to this chat. Telegram must identify the original channel for this to work.\\n\\nSend /cancel to stop.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'notifications:cancel')]]) });
+  });
+
+  bot.action('notifications:cancel', async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    await clearAdminSession(ctx.from.id);
+    await ctx.answerCbQuery('Setup cancelled.');
+    return renderNotificationSettings(ctx, false);
+  });
+
+  bot.action(/^notifications:disable:(join|notfound)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    const type = ctx.match[1] as 'join' | 'notfound';
+    await ctx.answerCbQuery();
+    return ctx.reply('⚠️ <b>Disable notifications?</b>\\n\\n' +
+      (type === 'join' ? 'New-user and premium-purchase alerts' : 'Not-found search alerts') +
+      ' will stop being sent.\\n\\nAre you sure?',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Confirm Disable', 'notifications:disableconfirm:' + type)],
+        [Markup.button.callback('↩️ Cancel', 'notifications:configure:' + type)],
+      ]) });
+  });
+
+  bot.action(/^notifications:disableconfirm:(join|notfound)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    const type = ctx.match[1] as 'join' | 'notfound';
+    await setSetting(await notificationKey(type), '');
+    await clearAdminSession(ctx.from.id);
+    await ctx.answerCbQuery('Notifications disabled.');
+    return renderNotificationType(ctx, type, false);
+  });
+
+  bot.action(/^notifications:test:(join|notfound)$/, async (ctx) => {
+    if (!ctx.from || !isAdmin(ctx.from.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    const type = ctx.match[1] as 'join' | 'notfound';
+    const channel = await getSetting<string>(await notificationKey(type), '');
+    if (!channel) return ctx.answerCbQuery('Configure a destination first.', { show_alert: true });
+    try {
+      const me = await ctx.telegram.getMe();
+      const member = await ctx.telegram.getChatMember(channel, me.id);
+      if (!['administrator', 'creator'].includes(member.status) ||
+          (member.status === 'administrator' && 'can_post_messages' in member && member.can_post_messages === false)) {
+        return ctx.answerCbQuery('The bot must be an administrator with permission to post.', { show_alert: true });
+      }
+      await ctx.telegram.sendMessage(channel, '🧪 <b>Test Notification</b>\\n\\n' +
+        (type === 'join' ? 'User & Premium Alerts are configured correctly.' : 'Not-Found Search Alerts are configured correctly.') +
+        '\\n\\n<i>This is a test message from PiratecultJAV.</i>', { parse_mode: 'HTML' });
+      await ctx.answerCbQuery('Test notification sent.');
+      return ctx.reply('✅ Test notification delivered to <code>' + escapeHtml(channel) + '</code>.', {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('↩️ Back to Settings', 'notifications:configure:' + type)]]),
+      });
+    } catch (err) {
+      console.warn('[NotificationSettings] Test delivery failed:', err instanceof Error ? err.message : String(err));
+      return ctx.answerCbQuery('Test failed. Check the channel ID and bot permissions.', { show_alert: true });
+    }
+  });
+
+  bot.action('notifications:close', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return ctx.deleteMessage().catch(() => undefined);
   });
 
 
@@ -2214,6 +2361,24 @@ bot.command('start', async (ctx) => {
     const session = await getAdminSession(ctx.from.id);
     if (!session) {
       return next();
+    }
+
+    if (session.action === 'notification_channel') {
+      if ('text' in ctx.message && ctx.message.text.trim() === '/cancel') {
+        await clearAdminSession(ctx.from.id);
+        return ctx.reply('❌ Notification setup cancelled.');
+      }
+      const type = session.payload?.type === 'notfound' ? 'notfound' : 'join';
+      let channelId = '';
+      if ('text' in ctx.message && /^-?\\d+$/.test(ctx.message.text.trim())) {
+        channelId = ctx.message.text.trim();
+      } else if ('forward_origin' in ctx.message && ctx.message.forward_origin?.type === 'channel') {
+        channelId = String(ctx.message.forward_origin.chat.id);
+      }
+      if (!channelId) {
+        return ctx.reply('❌ I could not identify a channel. Send a numeric channel ID (for example <code>-1001234567890</code>) or forward a channel post. Send /cancel to stop.', { parse_mode: 'HTML' });
+      }
+      return configureNotificationChannel(ctx, type, channelId);
     }
 
     if (session.action === 'promo_create' && 'text' in ctx.message) {
