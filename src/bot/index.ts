@@ -73,7 +73,7 @@ bot.command('start', async (ctx) => {
     }
 
     if (payload) {
-      const isVideoDeepLink = /^v_[0-9a-f-]{8,64}$/i.test(payload);
+      const isVideoDeepLink = /^v_\d+$/i.test(payload);
       return deliverVideoToUser(bot, ctx, isVideoDeepLink ? payload.slice(2) : payload, isVideoDeepLink ? 'deep_link' : 'unknown');
     }
 
