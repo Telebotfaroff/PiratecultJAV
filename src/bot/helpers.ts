@@ -631,6 +631,7 @@ async function showAdminSettings(ctx: any) {
     [Markup.button.callback('💰 Monetization', 'admin:monetization'), Markup.button.callback('📥 Quotas', 'admin:quota')],
     [Markup.button.callback('🎬 Content', 'admin:content'), Markup.button.callback('⚙️ Jobs', 'admin:jobs')],
     [Markup.button.callback('📣 Broadcast', 'settings:broadcast'), Markup.button.callback('🔒 Force Sub', 'settings:forcesub')],
+    [Markup.button.callback('🧾 Missing Metadata', 'admin:missedcodes')],
     [Markup.button.callback('🔔 Notification Channels', 'settings:notifications')],
     [Markup.button.callback('🛠️ System', 'admin:system'), Markup.button.callback('🔄 Recovery', 'settings:recovery')],
     [Markup.button.callback('❌ Close', 'settings:close')],
