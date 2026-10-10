@@ -595,24 +595,41 @@ bot.command('start', async (ctx) => {
 
   bot.command('setquota', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
-    const parts = ctx.message.text.trim().split(/\s+/);
-    const free = Number(parts[1]);
-    const semiPremium = Number(parts[2]);
-    if (!Number.isInteger(free) || free < 0 || free > 100000 || !Number.isInteger(semiPremium) || semiPremium < 0 || semiPremium > 100000) {
-      return ctx.reply('Usage: /setquota <free_daily_limit> <semi_premium_daily_limit>\n\nExample: /setquota 20 40');
-    }
+    const parts = ctx.message.text.trim().split(/\\s+/).slice(1);
     try {
-      await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
+      // Keep the original two-number command working, while also allowing one-plan edits.
+      if (parts.length === 2 && /^\\d+$/.test(parts[0]) && /^\\d+$/.test(parts[1])) {
+        const free = Number(parts[0]);
+        const semiPremium = Number(parts[1]);
+        if (![free, semiPremium].every(value => Number.isInteger(value) && value >= 0 && value <= 100000)) {
+          return ctx.reply('Usage: /setquota <free_limit> <semi_premium_limit>\\nExample: /setquota 20 40');
+        }
+        await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
+      } else if (parts.length === 2 && /^(free|semi_premium)$/i.test(parts[0]) && /^\\d+$/.test(parts[1])) {
+        const plan = parts[0].toLowerCase() as 'free' | 'semi_premium';
+        const value = Number(parts[1]);
+        if (!Number.isInteger(value) || value < 0 || value > 100000) {
+          return ctx.reply('Quota must be a whole number from 0 to 100000.');
+        }
+        const current = await getDownloadQuotaSettings();
+        await setDownloadQuotaSettings({ ...current, [plan]: value });
+      } else {
+        return ctx.reply(
+          'Usage:\\n/setquota <free_limit> <semi_premium_limit>\\n/setquota free <limit>\\n/setquota semi_premium <limit>\\n\\nExample: /setquota 20 40',
+        );
+      }
+
+      const saved = await getDownloadQuotaSettings();
       return ctx.reply(
-        '✅ <b>Download quotas updated</b>\n\n' +
-        `🆓 Free: <b>${free}/day</b>\n` +
-        `⚡ Semi Premium: <b>${semiPremium}/day</b>\n` +
+        '✅ <b>Download quotas saved</b>\\n\\n' +
+        `🆓 Free: <b>${saved.free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${saved.semi_premium}/day</b>\\n` +
         '💎 Premium: <b>Unlimited</b>',
         { parse_mode: 'HTML' },
       );
     } catch (err) {
       console.error('[Quota] Update failed:', err);
-      return ctx.reply('❌ Failed to save download quotas.');
+      return ctx.reply('❌ Could not save quota settings: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
     }
   });
 
@@ -855,15 +872,15 @@ bot.command('start', async (ctx) => {
   async function showQuotaPlanMenu(ctx: any, edit = false) {
     const q = await getDownloadQuotaSettings();
     const text =
-      '📥 <b>Download Quota Manager</b>\\n\\n' +
-      'Choose a plan to view its current daily limit and edit it.\\n\\n' +
+      '📥 <b>Download Quotas</b>\\n\\n' +
       `🆓 Free: <b>${q.free}/day</b>\\n` +
       `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
-      '💎 Premium: <b>Unlimited</b>';
+      '💎 Premium: <b>Unlimited</b>\\n\\n' +
+      'Select a plan to edit its quota.';
     const keyboard = Markup.inlineKeyboard([
-      [Markup.button.callback('🆓 Free Plan', 'admin:quota:plan:free')],
-      [Markup.button.callback('⚡ Semi Premium Plan', 'admin:quota:plan:semi_premium')],
-      [Markup.button.callback('💎 Premium Plan', 'admin:quota:plan:premium')],
+      [Markup.button.callback('🆓 Free', 'admin:quota:plan:free')],
+      [Markup.button.callback('⚡ Semi Premium', 'admin:quota:plan:semi_premium')],
+      [Markup.button.callback('💎 Premium', 'admin:quota:plan:premium')],
       [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
     ]);
     if (edit && ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
@@ -874,8 +891,9 @@ bot.command('start', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
     try {
-      return showQuotaPlanMenu(ctx, true);
-    } catch {
+      return await showQuotaPlanMenu(ctx, true);
+    } catch (err) {
+      console.error('[Quota] Could not render quota menu:', err);
       return ctx.reply('❌ Could not load download quotas.');
     }
   });
@@ -883,42 +901,49 @@ bot.command('start', async (ctx) => {
   bot.action(/^admin:quota:plan:(free|semi_premium|premium)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
-    const plan = ctx.match[1] as 'free' | 'semi_premium' | 'premium';
-    const q = await getDownloadQuotaSettings();
-    const title = plan === 'free' ? '🆓 Free Plan' : plan === 'semi_premium' ? '⚡ Semi Premium Plan' : '💎 Premium Plan';
-    const current = plan === 'free' ? q.free : plan === 'semi_premium' ? q.semi_premium : null;
-    const body = plan === 'premium'
-      ? `📋 <b>${title}</b>\\n\\nCurrent quota: <b>Unlimited</b>\\n\\nPremium downloads remain unlimited. This plan does not use a daily quota.`
-      : `📋 <b>${title}</b>\\n\\nCurrent quota: <b>${current}/day</b>\\n\\nTap Edit Quota to choose a new daily limit.`;
-    const rows: any[] = [];
-    if (plan !== 'premium') rows.push([Markup.button.callback('✏️ Edit Quota', `admin:quota:edit:${plan}`)]);
-    rows.push([Markup.button.callback('⬅️ All Plans', 'admin:quota')]);
-    return ctx.editMessageText(body, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+    try {
+      const plan = ctx.match[1] as 'free' | 'semi_premium' | 'premium';
+      const q = await getDownloadQuotaSettings();
+      const title = plan === 'free' ? '🆓 Free Plan' : plan === 'semi_premium' ? '⚡ Semi Premium Plan' : '💎 Premium Plan';
+      const current = plan === 'free' ? q.free : plan === 'semi_premium' ? q.semi_premium : null;
+      const body = plan === 'premium'
+        ? `💎 <b>Premium Plan</b>\\n\\nQuota: <b>Unlimited</b>`
+        : `${title}\\n\\nCurrent quota: <b>${current}/day</b>`;
+      const rows: any[] = [];
+      if (plan !== 'premium') rows.push([Markup.button.callback('✏️ Edit Quota', `admin:quota:edit:${plan}`)]);
+      rows.push([Markup.button.callback('⬅️ All Plans', 'admin:quota')]);
+      return await ctx.editMessageText(body, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+    } catch (err) {
+      console.error('[Quota] Could not open plan:', err);
+      return ctx.reply('❌ Could not open that quota plan. Please try again.');
+    }
   });
 
   bot.action(/^admin:quota:edit:(free|semi_premium)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
-    const plan = ctx.match[1] as 'free' | 'semi_premium';
-    const q = await getDownloadQuotaSettings();
-    const current = plan === 'free' ? q.free : q.semi_premium;
-    const title = plan === 'free' ? '🆓 Free Plan' : '⚡ Semi Premium Plan';
-    const otherPlan = plan === 'free' ? 'Semi Premium' : 'Free';
-    const otherValue = plan === 'free' ? q.semi_premium : q.free;
-    const values = [0, 10, 20, 30, 40, 50, 75, 100, 150, 200];
-    const rows: any[] = [];
-    for (let i = 0; i < values.length; i += 2) {
-      rows.push(values.slice(i, i + 2).map(value =>
-        Markup.button.callback(value === 0 ? '🚫 0/day' : ` ${value}/day`, `admin:quota:save:${plan}:${value}`)
-      ));
+    try {
+      const plan = ctx.match[1] as 'free' | 'semi_premium';
+      const q = await getDownloadQuotaSettings();
+      const current = plan === 'free' ? q.free : q.semi_premium;
+      const title = plan === 'free' ? '🆓 Free Plan' : '⚡ Semi Premium Plan';
+      const values = [0, 10, 20, 30, 40, 50, 75, 100, 150, 200];
+      const rows: any[] = [];
+      for (let i = 0; i < values.length; i += 2) {
+        rows.push(values.slice(i, i + 2).map(value =>
+          Markup.button.callback(value === 0 ? '🚫 0/day' : `${value}/day`, `admin:quota:save:${plan}:${value}`)
+        ));
+      }
+      rows.push([Markup.button.callback('⌨️ Custom Number', `admin:quota:custom:${plan}`)]);
+      rows.push([Markup.button.callback('⬅️ Back', `admin:quota:plan:${plan}`)]);
+      return await ctx.editMessageText(
+        `✏️ <b>Edit ${title}</b>\\n\\nCurrent limit: <b>${current}/day</b>\\n\\nChoose a new limit or enter a custom number.`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
+      );
+    } catch (err) {
+      console.error('[Quota] Could not open quota editor:', err);
+      return ctx.reply('❌ Could not open the quota editor. Please try again.');
     }
-    rows.push([Markup.button.callback('⌨️ Custom Number', `admin:quota:custom:${plan}`)]);
-    rows.push([Markup.button.callback('⬅️ Back to Plan', `admin:quota:plan:${plan}`)]);
-    return ctx.editMessageText(
-      `✏️ <b>Edit ${title}</b>\\n\\nCurrent quota: <b>${current}/day</b>\\n` +
-      `Other plan stays unchanged: ${otherPlan} <b>${otherValue}/day</b>.\\n\\nChoose a new limit or enter a custom number:`,
-      { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
-    );
   });
 
   bot.action(/^admin:quota:save:(free|semi_premium):(\\d+)$/, async (ctx) => {
@@ -926,21 +951,33 @@ bot.command('start', async (ctx) => {
     const plan = ctx.match[1] as 'free' | 'semi_premium';
     const value = Number(ctx.match[2]);
     if (!Number.isInteger(value) || value < 0 || value > 100000) return ctx.answerCbQuery('Invalid quota.');
-    await ctx.answerCbQuery('Saving quota…');
+    await ctx.answerCbQuery('Saving…');
+    let saved: DownloadQuotaSettings;
     try {
       const q = await getDownloadQuotaSettings();
       await setDownloadQuotaSettings({ ...q, [plan]: value });
-      const label = plan === 'free' ? 'Free' : 'Semi Premium';
-      return ctx.editMessageText(
-        `✅ <b>${label} quota updated</b>\\n\\nNew limit: <b>${value}/day</b>\\n\\nOther plan limits were not changed.`,
+      saved = await getDownloadQuotaSettings();
+      if (saved[plan] !== value) throw new Error('The database did not return the new quota value.');
+    } catch (err) {
+      console.error('[Quota] Save button failed:', err);
+      return ctx.reply('❌ Could not save quota: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+    }
+
+    const label = plan === 'free' ? 'Free' : 'Semi Premium';
+    try {
+      return await ctx.editMessageText(
+        `✅ <b>${label} quota saved</b>\\n\\nNew limit: <b>${value}/day</b>`,
         { parse_mode: 'HTML', ...Markup.inlineKeyboard([
           [Markup.button.callback('✏️ Edit Again', `admin:quota:edit:${plan}`)],
           [Markup.button.callback('📥 All Plans', 'admin:quota')],
         ]) },
       );
     } catch (err) {
-      console.error('[Quota] Update failed:', err);
-      return ctx.reply('❌ Failed to save quota. Please try again.');
+      console.warn('[Quota] Saved, but could not edit confirmation message:', err);
+      return ctx.reply(`✅ ${label} quota saved: ${value}/day.`, { ...Markup.inlineKeyboard([
+        [Markup.button.callback('✏️ Edit Again', `admin:quota:edit:${plan}`)],
+        [Markup.button.callback('📥 All Plans', 'admin:quota')],
+      ]) });
     }
   });
 
@@ -949,11 +986,16 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const plan = ctx.match[1] as 'free' | 'semi_premium';
     const label = plan === 'free' ? 'Free' : 'Semi Premium';
-    await setAdminSession(ctx.from.id, 'quota', 'awaiting_value', { plan });
-    return ctx.reply(
-      `⌨️ <b>Custom quota for ${label}</b>\\n\\nSend a whole number from <code>0</code> to <code>100000</code>.\\nSend <code>/cancel</code> to cancel.`,
-      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('Cancel', 'admin:quota:cancel_custom')]]) },
-    );
+    try {
+      await setAdminSession(ctx.from.id, 'quota', 'awaiting_value', { plan });
+      return ctx.reply(
+        `⌨️ <b>Custom ${label} quota</b>\\n\\nSend a whole number from <code>0</code> to <code>100000</code>.\\nSend /cancel to cancel.`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'admin:quota:cancel_custom')]]) },
+      );
+    } catch (err) {
+      console.error('[Quota] Could not start custom editor:', err);
+      return ctx.reply('❌ Could not start custom quota editing. Please try again.');
+    }
   });
 
   bot.action('admin:quota:cancel_custom', async (ctx) => {
