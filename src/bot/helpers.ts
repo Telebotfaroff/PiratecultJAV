@@ -384,6 +384,33 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   const offset = page * pageSize;
 
   try {
+    // Enforce force-sub for direct searches and callback-based pagination too.
+    // Previously the generic text handler checked membership, but callback searches
+    // could call this function directly and bypass the gate.
+    if (ctx.from) {
+      const forceSub = await checkUserForceSub(ctx.bot, ctx.from.id);
+      if (!forceSub.passed) {
+        const rows: any[] = forceSub.missingChannels.map(ch => [
+          Markup.button.url(
+            ch.request_mode ? '📨 Request to Join ' + ch.title : 'Join ' + ch.title,
+            ch.invite_link || 'https://t.me/' + ch.channel_id.replace('@', ''),
+          ),
+        ]);
+        rows.push([Markup.button.callback('✅ Check Membership', 'check_sub')]);
+        const gateText = '🔒 <b>Join the required channel(s) first</b>\\n\\nSubscribe to every channel below, then tap Check Membership to continue.';
+        if (ctx.callbackQuery) {
+          try {
+            await ctx.editMessageText(gateText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+          } catch {
+            await ctx.reply(gateText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+          }
+        } else {
+          await ctx.reply(gateText, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+        }
+        return;
+      }
+    }
+
     const { videos, total } = await searchVideos(rawQuery, pageSize, offset);
 
     if (videos.length === 0) {
