@@ -2040,12 +2040,15 @@ bot.command('start', async (ctx) => {
       try {
         const q = await getDownloadQuotaSettings();
         await setDownloadQuotaSettings({ ...q, [plan]: value });
+        const saved = await getDownloadQuotaSettings();
+        if (saved[plan] !== value) throw new Error('The database did not return the new quota value.');
         await clearAdminSession(ctx.from.id);
         const label = plan === 'free' ? 'Free' : 'Semi Premium';
-        await ctx.reply(`✅ ${label} quota updated to ${value}/day. The other plan was not changed.`);
+        await ctx.reply(`✅ ${label} quota saved: ${value}/day.`);
         return showQuotaPlanMenu(ctx);
       } catch (err) {
-        return ctx.reply('❌ Failed to save quota: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+        console.error('[Quota] Custom value save failed:', err);
+        return ctx.reply('❌ Could not save quota: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
       }
     }
 
