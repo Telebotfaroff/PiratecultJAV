@@ -984,6 +984,24 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     return showAdminSettings(ctx);
   });
+  bot.action('settings:notifications', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const joinChannel = await getSetting<string>('notification_join_premium_channel', '');
+    const notFoundChannel = await getSetting<string>('notification_not_found_channel', '');
+    const text =
+      '🔔 <b>Notification Channels</b>\\n\\n' +
+      '👤 <b>New users + Premium purchases</b>\\nCurrent channel: <code>' + escapeHtml(joinChannel || 'Not configured') + '</code>\\n' +
+      'Set: <code>/setjoinchannel -1001234567890</code>\\nDisable: <code>/setjoinchannel off</code>\\n\\n' +
+      '🔎 <b>Not-found searches</b>\\nCurrent channel: <code>' + escapeHtml(notFoundChannel || 'Not configured') + '</code>\\n' +
+      'Set: <code>/setnotfoundchannel -1001234567890</code>\\nDisable: <code>/setnotfoundchannel off</code>\\n\\n' +
+      'Add the bot as an administrator in each destination channel before enabling notifications.';
+    return ctx.editMessageText(text, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Refresh', 'settings:notifications')], [Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
+    });
+  });
+
 
   async function showQuotaPlanMenu(ctx: any, edit = false) {
     const q = await getDownloadQuotaSettings();
