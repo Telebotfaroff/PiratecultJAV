@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
@@ -285,25 +286,101 @@ bot.command('start', async (ctx) => {
 
   bot.command('promos', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const pageArg = Number(ctx.message.text.trim().split(/\\s+/)[1] || '1');
+    const page = Number.isInteger(pageArg) ? Math.max(1, Math.min(pageArg, 1000)) : 1;
     try {
-      const promos = await listPromoCodes(20);
-      if (!promos.length) return ctx.reply('🎟️ No promo codes found.');
-      const lines = promos.map((p, i) => {
-        const reward = p.reward_type === 'unlimited' ? `∞ ${p.reward_days}d unlimited` : `${p.reward_plan} ${p.reward_days}d`;
-        const usage = p.max_uses === null ? `${p.used_count}/∞` : `${p.used_count}/${p.max_uses}`;
-        const expiry = p.expires_at ? new Date(p.expires_at).toLocaleString() : 'never';
-        return `${i + 1}. <code>${escapeHtml(p.code)}</code> · ${p.is_active ? '🟢' : '🔴'} · ${reward} · ${usage} · exp: ${escapeHtml(expiry)}`;
+      const promos = await listPromoCodes(50);
+      if (!promos.length) {
+        return ctx.reply('🎟️ <b>No promo codes yet</b>\\n\\nCreate one with /createpromo or generate a batch with /createpromos.', {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
+        });
+      }
+
+      const pageSize = 10;
+      const pageCount = Math.max(1, Math.ceil(promos.length / pageSize));
+      const safePage = Math.min(page, pageCount);
+      const pageItems = promos.slice((safePage - 1) * pageSize, safePage * pageSize);
+      const now = Date.now();
+      const lines = pageItems.map((p, i) => {
+        const reward = p.reward_type === 'unlimited'
+          ? `∞ Unlimited · ${p.reward_days}d`
+          : `${p.reward_plan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} · ${p.reward_days}d`;
+        const exhausted = p.max_uses !== null && p.used_count >= p.max_uses;
+        const expired = Boolean(p.expires_at && new Date(p.expires_at).getTime() <= now);
+        const status = !p.is_active ? '⛔ Disabled' : expired ? '⌛ Expired' : exhausted ? '🚫 Exhausted' : '🟢 Active';
+        const usage = p.max_uses === null
+          ? `${p.used_count}/∞ used`
+          : `${p.used_count}/${p.max_uses} used · ${Math.max(0, p.max_uses - p.used_count)} left`;
+        const expiry = p.expires_at ? new Date(p.expires_at).toLocaleString() : 'No expiry';
+        return `${(safePage - 1) * pageSize + i + 1}. <code>${escapeHtml(p.code)}</code>\\n   ${status} · ${reward}\\n   👥 ${usage}\\n   ⏰ ${escapeHtml(expiry)}`;
       });
-      return ctx.reply('🎟️ <b>Promo Codes</b>\n\n' + lines.join('\n'), {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Monetization', 'admin:monetization')]]),
-      });
+
+      const active = promos.filter(p => p.is_active && (!p.expires_at || new Date(p.expires_at).getTime() > now) && (p.max_uses === null || p.used_count < p.max_uses)).length;
+      const exhausted = promos.filter(p => p.max_uses !== null && p.used_count >= p.max_uses).length;
+      const text = `🎟️ <b>Promo Manager</b>\\nPage ${safePage}/${pageCount} · Showing ${pageItems.length} of latest ${promos.length}\\n🟢 Available: ${active} · 🚫 Exhausted: ${exhausted}\\n\\n` + lines.join('\\n\\n');
+      const rows = [];
+      if (safePage > 1 || safePage < pageCount) {
+        const nav = [];
+        if (safePage > 1) nav.push(Markup.button.callback('⬅️ Previous', `promos:page:${safePage - 1}`));
+        if (safePage < pageCount) nav.push(Markup.button.callback('Next ➡️', `promos:page:${safePage + 1}`));
+        rows.push(nav);
+      }
+      rows.push([Markup.button.callback('➕ Create Promo', 'promos:create_help')]);
+      rows.push([Markup.button.callback('⬅️ Admin Center', 'settings:main')]);
+      return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
     } catch (err) {
       console.error('[Promo] List failed:', err);
       return ctx.reply('❌ Could not load promo codes.');
     }
   });
 
+  bot.action(/^promos:page:(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    const page = Math.max(1, Number(ctx.match[1]) || 1);
+    // Re-run the command handler's rendering using the requested page.
+    const promos = await listPromoCodes(50);
+    if (!promos.length) return ctx.reply('🎟️ No promo codes found.');
+    const pageSize = 10;
+    const pageCount = Math.max(1, Math.ceil(promos.length / pageSize));
+    const safePage = Math.min(page, pageCount);
+    const pageItems = promos.slice((safePage - 1) * pageSize, safePage * pageSize);
+    const now = Date.now();
+    const lines = pageItems.map((p, i) => {
+      const reward = p.reward_type === 'unlimited' ? `∞ Unlimited · ${p.reward_days}d` : `${p.reward_plan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} · ${p.reward_days}d`;
+      const exhausted = p.max_uses !== null && p.used_count >= p.max_uses;
+      const expired = Boolean(p.expires_at && new Date(p.expires_at).getTime() <= now);
+      const status = !p.is_active ? '⛔ Disabled' : expired ? '⌛ Expired' : exhausted ? '🚫 Exhausted' : '🟢 Active';
+      const usage = p.max_uses === null ? `${p.used_count}/∞ used` : `${p.used_count}/${p.max_uses} used · ${Math.max(0, p.max_uses - p.used_count)} left`;
+      const expiry = p.expires_at ? new Date(p.expires_at).toLocaleString() : 'No expiry';
+      return `${(safePage - 1) * pageSize + i + 1}. <code>${escapeHtml(p.code)}</code>\\n   ${status} · ${reward}\\n   👥 ${usage}\\n   ⏰ ${escapeHtml(expiry)}`;
+    });
+    const active = promos.filter(p => p.is_active && (!p.expires_at || new Date(p.expires_at).getTime() > now) && (p.max_uses === null || p.used_count < p.max_uses)).length;
+    const exhausted = promos.filter(p => p.max_uses !== null && p.used_count >= p.max_uses).length;
+    const text = `🎟️ <b>Promo Manager</b>\\nPage ${safePage}/${pageCount} · Showing ${pageItems.length} of latest ${promos.length}\\n🟢 Available: ${active} · 🚫 Exhausted: ${exhausted}\\n\\n` + lines.join('\\n\\n');
+    const rows = [];
+    if (safePage > 1 || safePage < pageCount) {
+      const nav = [];
+      if (safePage > 1) nav.push(Markup.button.callback('⬅️ Previous', `promos:page:${safePage - 1}`));
+      if (safePage < pageCount) nav.push(Markup.button.callback('Next ➡️', `promos:page:${safePage + 1}`));
+      rows.push(nav);
+    }
+    rows.push([Markup.button.callback('➕ Create Promo', 'promos:create_help')]);
+    rows.push([Markup.button.callback('⬅️ Admin Center', 'settings:main')]);
+    return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) }).catch(() =>
+      ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) })
+    );
+  });
+
+  bot.action('promos:create_help', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.reply(
+      '➕ <b>Create a promo</b>\\n\\nSingle code:\\n<code>/createpromo AUTO premium 30 100</code>\\n\\nBatch of 10 unique codes:\\n<code>/createpromos 10 premium 30 1</code>\\n\\nRewards: <code>premium</code>, <code>semi_premium</code>, or <code>unlimited</code>.\\nUse <code>-</code> for unlimited uses or no expiry.',
+      { parse_mode: 'HTML' },
+    );
+  });
   bot.command('deactivatepromo', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
     const code = ctx.message.text.trim().split(/\s+/)[1]?.trim();
@@ -333,48 +410,99 @@ bot.command('start', async (ctx) => {
   bot.command('createpromo', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
 
-    const parts = ctx.message.text.trim().split(/\s+/);
-    const code = parts[1]?.trim().toUpperCase();
-    const reward = parts[2]?.toLowerCase();
+    const parts = ctx.message.text.trim().split(/\\s+/);
+    const requestedCode = (parts[1] || '').trim().toUpperCase();
+    const reward = (parts[2] || '').toLowerCase();
     const days = Number(parts[3]);
     const maxUsesRaw = parts[4];
     const expiryRaw = parts[5];
 
-    if (!code || !['premium', 'semi_premium', 'unlimited'].includes(reward) || !Number.isInteger(days) || days <= 0) {
+    if (!requestedCode || !['premium', 'semi_premium', 'unlimited'].includes(reward) ||
+        !Number.isInteger(days) || days < 1 || days > 3650) {
       return ctx.reply(
-        'Usage:\n/createpromo <CODE> <premium|semi_premium|unlimited> <days> [max_uses] [expiry_iso]\n\nExample: /createpromo WELCOME30 premium 30 100'
+        'Usage:\\n/createpromo <CODE|AUTO> <premium|semi_premium|unlimited> <days:1-3650> [max_uses|-] [expiry_iso|-]\\n\\nExamples:\\n/createpromo WELCOME30 premium 30 100\\n/createpromo AUTO semi_premium 7 1\\n/createpromo AUTO unlimited 3 - 2026-12-31T23:59:59Z'
       );
     }
 
+    if (requestedCode !== 'AUTO' && !/^[A-Z0-9_-]{3,64}$/.test(requestedCode)) {
+      return ctx.reply('❌ Code must be 3–64 characters using only A–Z, 0–9, underscore, or hyphen.');
+    }
+
     const maxUses = maxUsesRaw && maxUsesRaw !== '-' ? Number(maxUsesRaw) : null;
-    if (maxUses !== null && (!Number.isInteger(maxUses) || maxUses <= 0)) {
-      return ctx.reply('❌ max_uses must be a positive integer.');
+    if (maxUses !== null && (!Number.isSafeInteger(maxUses) || maxUses <= 0 || maxUses > 1000000)) {
+      return ctx.reply('❌ max_uses must be between 1 and 1,000,000, or use - for unlimited uses.');
     }
 
     let expiresAt: string | null = null;
     if (expiryRaw && expiryRaw !== '-') {
       const parsed = new Date(expiryRaw);
       if (Number.isNaN(parsed.getTime())) return ctx.reply('❌ Invalid expiry. Use ISO format, e.g. 2026-12-31T23:59:59Z.');
+      if (parsed.getTime() <= Date.now()) return ctx.reply('❌ Expiry must be a future date and time.');
       expiresAt = parsed.toISOString();
     }
 
+    const code = requestedCode === 'AUTO' ? `PC-${randomBytes(5).toString('hex').toUpperCase()}` : requestedCode;
     const rewardType = reward === 'unlimited' ? 'unlimited' : 'plan';
     const rewardPlan = rewardType === 'plan' ? reward as 'premium' | 'semi_premium' : null;
 
     try {
       const ok = await createPromoCode(code, rewardType, rewardPlan, days, maxUses, expiresAt, ctx.from!.id);
-      if (!ok) return ctx.reply('❌ Could not create promo. The code may already exist or the reward settings are invalid.');
-
+      if (!ok) return ctx.reply('❌ Promo was not created. The code may already exist or the reward settings were rejected.');
+      const rewardText = rewardType === 'unlimited' ? `∞ Unlimited access for ${days} day(s)` : `${rewardPlan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} for ${days} day(s)`;
       return ctx.reply(
-        `✅ <b>Promo created</b>\n\n🎟️ Code: <code>${escapeHtml(code)}</code>\n🎁 Reward: <b>${rewardType === 'unlimited' ? `Unlimited for ${days} day(s)` : `${rewardPlan} for ${days} day(s)`}</b>\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>${expiresAt ? `\n⏰ Expires: <b>${escapeHtml(new Date(expiresAt).toLocaleString())}</b>` : ''}`,
-        { parse_mode: 'HTML' },
+        `✅ <b>Promo created</b>\\n\\n🎟️ Code: <code>${escapeHtml(code)}</code>\\n🎁 Reward: <b>${rewardText}</b>\\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>\\n⏰ Expiry: <b>${expiresAt ? escapeHtml(new Date(expiresAt).toLocaleString()) : 'No expiry'}</b>\\n\\n<i>Share the code with eligible users. Each Telegram user can redeem it once.</i>`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🎟️ View Promo Manager', 'promos:page:1')]]) },
       );
     } catch (err) {
       console.error('[Promo] Create failed:', err);
-      return ctx.reply('❌ Failed to create promo code.');
+      return ctx.reply('❌ Failed to create promo code. Please check the database migration and try again.');
     }
   });
 
+  bot.command('createpromos', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
+    const parts = ctx.message.text.trim().split(/\\s+/);
+    const count = Number(parts[1]);
+    const reward = (parts[2] || '').toLowerCase();
+    const days = Number(parts[3]);
+    const maxUsesRaw = parts[4];
+    const expiryRaw = parts[5];
+
+    if (!Number.isInteger(count) || count < 1 || count > 50 ||
+        !['premium', 'semi_premium', 'unlimited'].includes(reward) ||
+        !Number.isInteger(days) || days < 1 || days > 3650) {
+      return ctx.reply('Usage:\\n/createpromos <count:1-50> <premium|semi_premium|unlimited> <days:1-3650> [max_uses_per_code|-] [expiry_iso|-]\\n\\nExample: /createpromos 10 premium 30 1');
+    }
+    const maxUses = maxUsesRaw && maxUsesRaw !== '-' ? Number(maxUsesRaw) : null;
+    if (maxUses !== null && (!Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 1000000)) {
+      return ctx.reply('❌ max_uses_per_code must be 1–1,000,000 or - for unlimited uses.');
+    }
+    let expiresAt: string | null = null;
+    if (expiryRaw && expiryRaw !== '-') {
+      const parsed = new Date(expiryRaw);
+      if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+        return ctx.reply('❌ Expiry must be a valid future date/time in ISO format.');
+      }
+      expiresAt = parsed.toISOString();
+    }
+    const rewardType = reward === 'unlimited' ? 'unlimited' : 'plan';
+    const rewardPlan = rewardType === 'plan' ? reward as 'premium' | 'semi_premium' : null;
+    const created: string[] = [];
+    let failed = 0;
+    for (let i = 0; i < count; i++) {
+      const code = `PC-${randomBytes(6).toString('hex').toUpperCase()}`;
+      try {
+        if (await createPromoCode(code, rewardType, rewardPlan, days, maxUses, expiresAt, ctx.from!.id)) created.push(code);
+        else failed++;
+      } catch (err) {
+        failed++;
+        console.warn('[Promo] Batch creation failed for one code:', err instanceof Error ? err.message : String(err));
+      }
+    }
+    const lines = created.map((code, i) => `${i + 1}. <code>${escapeHtml(code)}</code>`);
+    const message = `🎟️ <b>Promo batch complete</b>\\n\\n✅ Created: <b>${created.length}/${count}</b>\\n❌ Failed: <b>${failed}</b>\\n🎁 Reward: <b>${rewardType === 'unlimited' ? 'Unlimited' : rewardPlan}</b> · ${days} day(s)\\n👥 Uses per code: <b>${maxUses ?? 'Unlimited'}</b>${expiresAt ? `\\n⏰ Expires: <b>${escapeHtml(new Date(expiresAt).toLocaleString())}</b>` : ''}\\n\\n${lines.join('\\n')}`;
+    return ctx.reply(message.slice(0, 4000), { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🎟️ View Promo Manager', 'promos:page:1')]]) });
+  });
   bot.command('user', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
     const userId = Number(ctx.message.text.trim().split(/\s+/)[1]);
@@ -460,7 +588,7 @@ bot.command('start', async (ctx) => {
     if (!ctx.from) return;
     const parts = ctx.message.text.trim().split(/\s+/);
     const code = parts[1]?.trim();
-    if (!code) return ctx.reply('Usage: /promo <CODE>');
+    if (!code) return ctx.reply('🎟️ <b>Redeem a promo code</b>\\n\\nUse <code>/promo YOUR_CODE</code> to apply a code.\\n\\nCodes are case-insensitive and can be redeemed once per account.', { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('📊 My Dashboard', 'user:plan')]]) });
 
     try {
       const result = await redeemPromoCode(ctx.from.id, code);
