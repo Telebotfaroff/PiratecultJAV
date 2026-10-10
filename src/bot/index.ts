@@ -156,19 +156,7 @@ bot.command('start', async (ctx) => {
       [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
     ]);
 
-    const startImageUrl = await getRandomStartImageUrl();
-    if (startImageUrl) {
-      try {
-        return await ctx.replyWithPhoto({ url: startImageUrl }, {
-          caption: welcome,
-          parse_mode: 'HTML',
-          ...startKeyboard,
-        });
-      } catch (err) {
-        console.warn('[StartImage] Telegram could not send selected image; falling back to text:', err instanceof Error ? err.message : String(err));
-      }
-    }
-
+    // Use a text message for the home screen so all menu buttons can edit it in place.
     return ctx.reply(welcome, { parse_mode: 'HTML', ...startKeyboard });
   });
 
@@ -240,10 +228,13 @@ bot.command('start', async (ctx) => {
   bot.action('menu:search', async (ctx) => {
     await ctx.answerCbQuery();
     const prompt = '🔎 <b>Search the catalog</b>\n\nSend a video code or keyword in your next message.\n\nExamples: <code>ADN-001</code>, <code>STAR-765</code>';
-    return ctx.reply(prompt, {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]),
-    });
+    const options = { parse_mode: 'HTML' as const, ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]) };
+    try {
+      return await ctx.editMessageText(prompt, options);
+    } catch (err) {
+      if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+      return ctx.reply(prompt, options);
+    }
   });
 
   bot.action('menu:help', async (ctx) => {
@@ -265,9 +256,12 @@ bot.command('start', async (ctx) => {
       [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
       [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('🏠 Home', 'menu:home')],
     ]);
-    return ctx.editMessageText(helpText, { parse_mode: 'HTML', ...keyboard }).catch(() =>
-      ctx.reply(helpText, { parse_mode: 'HTML', ...keyboard })
-    );
+    try {
+      return await ctx.editMessageText(helpText, { parse_mode: 'HTML', ...keyboard });
+    } catch (err) {
+      if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+      return ctx.reply(helpText, { parse_mode: 'HTML', ...keyboard });
+    }
   });
 
   // 3. Cancel command
