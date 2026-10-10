@@ -9,6 +9,7 @@ import { upsertUser, isUserBlocked, setUserBlocked, countUsers, getBroadcastUser
 import { checkUserForceSub, getAllForceSubChannels, upsertForceSubChannel, updateForceSubChannel, deleteForceSubChannel, createForceSubInviteLink } from '../services/forceSub.ts';
 import { getAdminSession, setAdminSession, clearAdminSession } from '../services/adminSessions.ts';
 import { javtifulProvider } from '../providers/javtiful/index.ts';
+import { recordMissedCode, listMissedCodes, removeMissedCode } from '../services/missedCodes.ts';
 import { sendDumpVideoToUser, storeThumbnailInDumpChannel } from '../services/dump.ts';
 import { installMessageDeleteTimer } from '../services/messageDeleteTimer.ts';
 import { getSetting, setSetting } from '../services/settings.ts';
@@ -384,6 +385,45 @@ bot.command('start', async (ctx) => {
     return ctx.replyWithMarkdown(msg);
   });
 
+  async function showMissedCodes(ctx: any, requestedPage = 1, edit = false) {
+    try {
+      const pageSize = 20;
+      const first = await listMissedCodes(pageSize, (requestedPage - 1) * pageSize);
+      const pageCount = Math.max(1, Math.ceil(first.total / pageSize));
+      const page = Math.min(Math.max(1, requestedPage), pageCount);
+      const result = page === requestedPage ? first : await listMissedCodes(pageSize, (page - 1) * pageSize);
+      const lines = [
+        '🧾 <b>Codes Missing Metadata</b>',
+        `📊 Total: <b>${result.total}</b> · Page <b>${page}/${pageCount}</b>`,
+        '',
+        ...(result.codes.length ? result.codes.map((item, index) =>
+          `${(page - 1) * pageSize + index + 1}. <code>${escapeHtml(item.code)}</code> — ${escapeHtml(item.failure_reason || 'No metadata')}`
+        ) : ['No missed codes recorded yet.']),
+        '',
+        'Tap a code button to add its title, thumbnail URL, and video manually.'
+      ];
+      const rows: any[] = result.codes.map(item => [
+        Markup.button.callback('➕ Add ' + item.code.slice(0, 30), 'missedcodes:add:' + item.code.slice(0, 40))
+      ]);
+      const nav: any[] = [];
+      if (page > 1) nav.push(Markup.button.callback('⬅️ Previous', 'missedcodes:page:' + (page - 1)));
+      if (page < pageCount) nav.push(Markup.button.callback('Next ➡️', 'missedcodes:page:' + (page + 1)));
+      if (nav.length) rows.push(nav);
+      rows.push([Markup.button.callback('🔄 Refresh', 'missedcodes:page:' + page)]);
+      const text = lines.join('\n');
+      if (edit && ctx.callbackQuery) {
+        try { return await ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) }); }
+        catch (err) {
+          if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+        }
+      }
+      return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+    } catch (err) {
+      console.error('[MissedCodes] Failed to list:', err);
+      return ctx.reply('❌ Could not load missed codes. Make sure Supabase migration 004_missed_metadata_codes.sql has been applied.');
+    }
+  }
+
   // 5. Admin /post workflow
   bot.command('post', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) {
@@ -394,6 +434,27 @@ bot.command('start', async (ctx) => {
     return ctx.reply('📝 *Admin Post:* Please enter the JAV code to post (e.g. `ADN-001`):', {
       parse_mode: 'Markdown',
     });
+  });
+
+  bot.command('missedcodes', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const requestedPage = Number(ctx.message.text.trim().split(/\s+/)[1] || '1');
+    const page = Number.isInteger(requestedPage) ? Math.max(1, requestedPage) : 1;
+    return showMissedCodes(ctx, page);
+  });
+
+  bot.action(/^missedcodes:page:(\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Admin access required.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return showMissedCodes(ctx, Math.max(1, Number(ctx.match[1]) || 1), true);
+  });
+
+  bot.action(/^missedcodes:add:([A-Z0-9_-]{1,40})$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Admin access required.', { show_alert: true });
+    const code = normalizeCode(ctx.match[1]);
+    await ctx.answerCbQuery('Starting manual post…');
+    await setAdminSession(ctx.from!.id, 'post', 'awaiting_manual_title', { code });
+    return ctx.reply(`✍️ Enter the title for <code>${escapeHtml(code)}</code>, or /cancel to stop.`, { parse_mode: 'HTML' });
   });
 
   bot.command('payments', async (ctx) => {
@@ -2577,7 +2638,15 @@ bot.command('start', async (ctx) => {
         }
       } catch (err: unknown) {
         const errMsg = err instanceof Error ? err.message : String(err);
-        return ctx.reply(`❌ Update failed: ${errMsg}\nPlease try again or send /cancel.`);
+        try {
+          await recordMissedCode(code, errMsg);
+        } catch (saveErr) {
+          console.error('[MissedCodes] Could not persist code:', saveErr);
+        }
+        await setAdminSession(ctx.from.id, 'post', 'awaiting_manual_title', { code });
+        return ctx.reply(
+          `⚠️ Could not fetch metadata for ${code}: ${errMsg}\\n\\n✍️ Send the post title manually, or use /cancel to stop.\\nThis code has been added to /missedcodes.`
+        );
       }
     }
 
@@ -2732,6 +2801,7 @@ bot.command('start', async (ctx) => {
           status: 'available',
         });
 
+        await removeMissedCode(code).catch((removeErr) => console.warn('[MissedCodes] Could not clear posted code:', removeErr));
         await clearAdminSession(ctx.from.id);
 
         return ctx.replyWithMarkdown(
