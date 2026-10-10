@@ -1,4 +1,5 @@
 import { randomBytes } from 'node:crypto';
+import type { Express } from 'express';
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, extractCodes, cleanActressList, cleanTitle } from '../services/code.ts';
@@ -22,6 +23,9 @@ import { registerUserTrackingMiddleware } from './middleware/userTracking.ts';
 
 let botInstance: Telegraf | null = null;
 let isPollingActive = false;
+let isWebhookActive = false;
+let webhookApp: Express | null = null;
+let webhookRouteRegistered = false;
 setActiveBotRole(config.activeBot);
 
 function tokenForRole(role: 'primary' | 'backup'): string {
@@ -1774,6 +1778,10 @@ export function getBot(): Telegraf | null {
 
 
 export async function startBotPolling(): Promise<boolean> {
+  if (isWebhookActive) {
+    console.log('[TelegramBot] Webhook mode is already active.');
+    return true;
+  }
   if (isPollingActive) {
     console.log('[TelegramBot] Polling already active.');
     return true;
@@ -1841,7 +1849,10 @@ export async function startBotPolling(): Promise<boolean> {
 
   try {
     console.log(`[TelegramBot] Launching ${role} bot polling...`);
-    bot.launch({ dropPendingUpdates: true }).catch(err => {
+    await bot.telegram.deleteWebhook({ drop_pending_updates: false }).catch(err => {
+      console.warn('[TelegramBot] Could not clear an existing webhook before polling:', err instanceof Error ? err.message : String(err));
+    });
+    bot.launch({ dropPendingUpdates: false }).catch(err => {
       console.error('[TelegramBot] Polling error:', err?.message || err);
       isPollingActive = false;
     });
@@ -1856,6 +1867,101 @@ export async function startBotPolling(): Promise<boolean> {
   }
 }
 
+/** Starts the configured Telegram bot using Telegram's HTTPS webhook delivery. */
+export async function startBotWebhook(app: Express): Promise<boolean> {
+  if (!config.webhookUrl || !config.webhookSecret) {
+    console.error('[TelegramBot] Webhook mode requires both WEBHOOK_URL and WEBHOOK_SECRET.');
+    return false;
+  }
+  if (isWebhookActive) {
+    console.log('[TelegramBot] Webhook already active.');
+    return true;
+  }
+
+  webhookApp = app;
+  let role = availableRole(getStoredActiveBotRole());
+  if (!role) {
+    console.error('[TelegramBot] No bot token configured. Webhook not started.');
+    return false;
+  }
+
+  const validateAndBuild = async (candidate: 'primary' | 'backup'): Promise<Telegraf | null> => {
+    const token = tokenForRole(candidate);
+    if (!token) return null;
+    const candidateBot = createBot(token);
+    try {
+      const me = await candidateBot.telegram.getMe();
+      console.log(`[TelegramBot] ${candidate.toUpperCase()} bot validated for webhook: @${me.username || me.id}`);
+      await candidateBot.telegram.setMyCommands([
+        { command: 'start', description: 'Open the main menu' },
+        { command: 'search', description: 'Search the video catalog' },
+        { command: 'dashboard', description: 'View your account dashboard' },
+        { command: 'plan', description: 'Check your plan and limits' },
+        { command: 'leaderboard', description: 'View referral leaderboard' },
+        { command: 'help', description: 'How to use the bot' },
+        { command: 'cancel', description: 'Cancel the current operation' },
+      ]).catch(err => {
+        console.warn('[TelegramBot] Could not register command menu:', err instanceof Error ? err.message : String(err));
+      });
+      if (config.dumpChatId) {
+        await candidateBot.telegram.getChat(config.dumpChatId);
+        await candidateBot.telegram.getChatMember(config.dumpChatId, me.id);
+      }
+      return candidateBot;
+    } catch (err: unknown) {
+      const info = classifyTelegramError(err);
+      console.error(`[TelegramBot] ${candidate.toUpperCase()} webhook validation failed: ${info.message}`);
+      return null;
+    }
+  };
+
+  let bot = await validateAndBuild(role);
+  if (!bot) {
+    const fallback = role === 'primary' ? 'backup' : 'primary';
+    if (!tokenForRole(fallback)) return false;
+    console.warn(`[TelegramBot] Falling back from ${role} to ${fallback} bot for webhook mode.`);
+    role = fallback;
+    bot = await validateAndBuild(role);
+  }
+  if (!bot) {
+    console.error('[TelegramBot] No configured bot could be validated. Webhook not started.');
+    return false;
+  }
+
+  setActiveBotRole(role);
+  botInstance = bot;
+
+  // Register one route that always dispatches to the currently selected bot.
+  if (!webhookRouteRegistered) {
+    app.post(config.webhookPath, (req, res, next) => {
+      const activeBot = botInstance;
+      if (!activeBot) return res.status(503).send('Telegram bot is unavailable');
+      return activeBot.webhookCallback(config.webhookPath, {
+        secretToken: config.webhookSecret,
+      })(req, res, next);
+    });
+    webhookRouteRegistered = true;
+  }
+
+  const webhookUrl = `${config.webhookUrl}${config.webhookPath}`;
+  try {
+    await bot.telegram.setWebhook(webhookUrl, {
+      secret_token: config.webhookSecret,
+      max_connections: 40,
+      allowed_updates: ['message', 'callback_query', 'pre_checkout_query'],
+      drop_pending_updates: false,
+    });
+    isWebhookActive = true;
+    isPollingActive = false;
+    console.log(`[TelegramBot] Webhook enabled at ${webhookUrl}`);
+    return true;
+  } catch (err: unknown) {
+    isWebhookActive = false;
+    console.error('[TelegramBot] Failed to configure webhook:', err instanceof Error ? err.message : String(err));
+    return false;
+  }
+}
+
 /** Switches polling to the requested configured bot without changing persistent data. */
 export function isBotRoleConfigured(role: 'primary' | 'backup'): boolean {
   return Boolean(tokenForRole(role));
@@ -1863,10 +1969,17 @@ export function isBotRoleConfigured(role: 'primary' | 'backup'): boolean {
 
 export async function switchBotRole(role: 'primary' | 'backup'): Promise<boolean> {
   if (!tokenForRole(role)) return false;
+  const previousBot = botInstance;
+  if (isWebhookActive && previousBot) {
+    await previousBot.telegram.deleteWebhook({ drop_pending_updates: false }).catch(() => undefined);
+    isWebhookActive = false;
+  }
   stopBotPolling();
   botInstance = null;
   setActiveBotRole(role);
-  return startBotPolling();
+  return webhookApp && config.webhookUrl && config.webhookSecret
+    ? startBotWebhook(webhookApp)
+    : startBotPolling();
 }
 
 export function stopBotPolling(): void {
@@ -1882,5 +1995,5 @@ export function stopBotPolling(): void {
 }
 
 export function isBotActive(): boolean {
-  return isPollingActive;
+  return isPollingActive || isWebhookActive;
 }
