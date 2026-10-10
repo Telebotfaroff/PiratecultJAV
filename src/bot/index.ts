@@ -97,6 +97,67 @@ function createBot(token: string): Telegraf {
   // 1. User tracking & blocked filter middleware
   registerUserTrackingMiddleware(bot);
 
+  // Let an admin opt a requester into a one-time alert when a matching catalog item appears.
+  bot.action(/^notfound:watch:([a-f0-9]+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Admin access required.', { show_alert: true });
+    await ctx.answerCbQuery('Notification watch enabled.');
+    return ctx.editMessageReplyMarkup({
+      inline_keyboard: [[Markup.button.callback('🔔 Watching for this video', 'notfound:watching')]],
+    }).catch(() => undefined);
+  });
+
+  bot.action('notfound:watching', async (ctx) => ctx.answerCbQuery('This request is already being watched.'));
+
+  // Poll pending requests in the settings store and notify users once a matching catalog result exists.
+  if (!(globalThis as any).__pendingNotFoundWatcher) {
+    (globalThis as any).__pendingNotFoundWatcher = setInterval(async () => {
+      try {
+        const pending = await getSetting<any[]>('pending_not_found_notifications', []);
+        if (!Array.isArray(pending) || pending.length === 0) return;
+        const remaining: any[] = [];
+        for (const request of pending) {
+          if (!request || !Number.isSafeInteger(Number(request.userId)) || !request.query) continue;
+          try {
+            const result = await searchVideos(String(request.query), 10, 0);
+            if (!result.videos.length) {
+              remaining.push(request);
+              continue;
+            }
+            const query = String(request.query).trim().toLowerCase();
+            const match = result.videos.find((video: any) =>
+              String(video.code || '').toLowerCase() === query ||
+              String(video.title || '').toLowerCase().includes(query) ||
+              query.includes(String(video.code || '').toLowerCase())
+            );
+            if (!match) {
+              remaining.push(request);
+              continue;
+            }
+            const me = await bot.telegram.getMe();
+            const safe = (value: unknown) => escapeHtml(value ?? '—');
+            await bot.telegram.sendMessage(
+              Number(request.userId),
+              '🎉 <b>Your requested video has been added!</b>\\n\\n🎬 <b>' + safe(match.code) + '</b> — ' + safe(match.title) +
+              '\\n\\nTap below to get it.',
+              {
+                parse_mode: 'HTML',
+                ...Markup.inlineKeyboard([[Markup.button.url('🎬 Get Video', 'https://t.me/' + me.username + '?start=' + encodeURIComponent(String(match.code)))]])
+              },
+            );
+          } catch (err) {
+            // Keep it pending on temporary database or Telegram errors.
+            remaining.push(request);
+            console.warn('[NotFoundWatch] Check failed:', err instanceof Error ? err.message : String(err));
+          }
+        }
+        await setSetting('pending_not_found_notifications', remaining.slice(-500));
+      } catch (err) {
+        console.warn('[NotFoundWatch] Poll failed:', err instanceof Error ? err.message : String(err));
+      }
+    }, 120_000);
+    (globalThis as any).__pendingNotFoundWatcher.unref?.();
+  }
+
   // 2. Start command
   bot.command('dashboard', async (ctx) => sendUserPlan(ctx));
   bot.command('leaderboard', async (ctx) => sendReferralLeaderboard(ctx));
