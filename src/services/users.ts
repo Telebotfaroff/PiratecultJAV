@@ -277,7 +277,7 @@ export async function redeemPromoCode(userId: number, code: string): Promise<Pro
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('redeem_promo_code', {
     p_user_id: userId,
-    p_code: code.trim().toUpperCase(),
+    p_code: normalizedCode,
   });
   if (error) throw new Error(`Failed redeeming promo: ${error.message}`);
   const row = Array.isArray(data) ? data[0] : data;
@@ -360,7 +360,7 @@ export async function createPromoCode(
 ): Promise<boolean> {
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('create_promo_code', {
-    p_code: code.trim().toUpperCase(),
+    p_code: normalizedCode,
     p_reward_type: rewardType,
     p_reward_plan: rewardPlan,
     p_reward_days: rewardDays,
