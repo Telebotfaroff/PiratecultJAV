@@ -1102,12 +1102,151 @@ bot.command('start', async (ctx) => {
       }
     };
     const lines = jobs.length
-      ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>`)
+      ? jobs.map(j => `${statusIcon(j.status)} <b>#${j.id}</b>  <code>${escapeHtml(j.code)}</code>  <i>${escapeHtml(j.status)}</i>${j.error ? '\\n   ❌ ' + escapeHtml(j.error.slice(0, 100)) : ''}`)
       : ['No recent jobs.'];
-    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\n\n' + lines.join('\n'), {
+    const rows: any[] = [];
+    for (const job of jobs) {
+      if (job.status === 'failed') rows.push([Markup.button.callback(`🔄 Retry #${job.id}`, `admin:job:retry:${job.id}`)]);
+    }
+    rows.push([Markup.button.callback('🔄 Refresh', 'admin:jobs')]);
+    rows.push([Markup.button.callback('⬅️ Back', 'admin:content')]);
+    return ctx.editMessageText('⚙️ <b>Recent Jobs</b>\\n\\n' + lines.join('\\n'), {
       parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'admin:content')], [Markup.button.callback('🔄 Refresh', 'admin:jobs')]]),
+      ...Markup.inlineKeyboard(rows),
     });
+  });
+
+
+  // Interactive user management: search by Telegram ID, inspect status, and change plan/block state.
+  bot.action('admin:users', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '👥 <b>User Management</b>\\n\\nSearch a Telegram user ID to view their plan, daily usage, referral activity, and account status.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔍 Search User', 'admin:users:search')],
+        [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+      ]) },
+    );
+  });
+
+  bot.action('admin:users:search', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    await setAdminSession(ctx.from!.id, 'user_lookup', 'awaiting_id');
+    return ctx.reply(
+      '🔍 <b>Find User</b>\\n\\nSend the user’s numeric Telegram ID.\\nExample: <code>123456789</code>\\n\\nSend /cancel to stop.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'admin:users:cancel')]]) },
+    );
+  });
+
+  bot.action('admin:users:cancel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery('Cancelled');
+    await clearAdminSession(ctx.from!.id);
+    return ctx.editMessageText('👥 <b>User Management</b>\\n\\nSearch cancelled.', {
+      parse_mode: 'HTML', ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔍 Search User', 'admin:users:search')],
+        [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+      ]),
+    });
+  });
+
+  async function showAdminUserProfile(ctx: any, userId: number) {
+    const [user, dashboard] = await Promise.all([getUser(userId), getUserDashboard(userId)]);
+    if (!user || !dashboard) {
+      const message = '❌ User not found. Check the Telegram ID and try again.';
+      if (ctx.callbackQuery) return ctx.editMessageText(message, { ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔍 Search Another User', 'admin:users:search')],
+        [Markup.button.callback('⬅️ User Management', 'admin:users')],
+      ]) });
+      return ctx.reply(message, { ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔍 Search Another User', 'admin:users:search')],
+        [Markup.button.callback('⬅️ User Management', 'admin:users')],
+      ]) });
+    }
+
+    const planLabel = dashboard.plan === 'premium' ? '💎 Premium' : dashboard.plan === 'semi_premium' ? '⚡ Semi Premium' : '🆓 Free';
+    const quota = dashboard.is_unlimited ? 'Unlimited' : String(dashboard.daily_limit);
+    const remaining = dashboard.is_unlimited ? '∞' : String(dashboard.daily_remaining);
+    const displayName = [user.first_name, user.last_name].filter(Boolean).join(' ') || (user.username ? '@' + user.username : 'Unknown');
+    const text = [
+      '👤 <b>User Profile</b>',
+      '',
+      'Name: <b>' + escapeHtml(displayName) + '</b>',
+      'Username: <b>' + escapeHtml(user.username ? '@' + user.username : '—') + '</b>',
+      'ID: <code>' + userId + '</code>',
+      'Status: <b>' + (user.is_blocked ? '🚫 Blocked' : '🟢 Active') + '</b>',
+      'Plan: <b>' + planLabel + '</b>',
+      'Daily usage: <b>' + dashboard.daily_used + '/' + quota + '</b>',
+      'Remaining today: <b>' + remaining + '</b>',
+      'Referrals: <b>' + dashboard.completed_referral_count + '/' + dashboard.referral_count + '</b>',
+      dashboard.plan_expires_at ? 'Plan expires: <b>' + escapeHtml(new Date(dashboard.plan_expires_at).toLocaleString()) + '</b>' : '',
+    ].filter(Boolean).join('\\n');
+
+    const rows: any[] = [
+      [
+        Markup.button.callback('🆓 Free', 'admin:user:plan:' + userId + ':free'),
+        Markup.button.callback('⚡ Semi Premium', 'admin:user:plan:' + userId + ':semi_premium'),
+      ],
+      [Markup.button.callback('💎 Premium', 'admin:user:plan:' + userId + ':premium')],
+      [Markup.button.callback(user.is_blocked ? '🟢 Unblock User' : '🚫 Block User', 'admin:user:block:' + userId + ':' + (user.is_blocked ? '0' : '1'))],
+      [Markup.button.callback('🔍 Search Another User', 'admin:users:search')],
+      [Markup.button.callback('⬅️ User Management', 'admin:users')],
+    ];
+    if (ctx.callbackQuery) return ctx.editMessageText(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+    return ctx.reply(text, { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
+  }
+
+  bot.action(/^admin:user:profile:(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    try { return await showAdminUserProfile(ctx, Number(ctx.match[1])); }
+    catch (err) { return ctx.reply('❌ Could not load user profile: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' }); }
+  });
+
+  bot.action(/^admin:user:plan:(\\d+):(free|semi_premium|premium)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const userId = Number(ctx.match[1]);
+    const plan = ctx.match[2] as 'free' | 'semi_premium' | 'premium';
+    try {
+      const ok = await setUserPlan(userId, plan);
+      if (!ok) return ctx.answerCbQuery('User not found.', { show_alert: true });
+      await ctx.answerCbQuery('Plan updated.');
+      return showAdminUserProfile(ctx, userId);
+    } catch (err) {
+      return ctx.answerCbQuery('Could not update plan: ' + (err instanceof Error ? err.message : 'Unknown error'), { show_alert: true });
+    }
+  });
+
+  bot.action(/^admin:user:block:(\\d+):(0|1)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const userId = Number(ctx.match[1]);
+    const shouldBlock = ctx.match[2] === '1';
+    try {
+      await setUserBlocked(userId, shouldBlock);
+      await ctx.answerCbQuery(shouldBlock ? 'User blocked.' : 'User unblocked.');
+      return showAdminUserProfile(ctx, userId);
+    } catch (err) {
+      return ctx.answerCbQuery('Could not update user status: ' + (err instanceof Error ? err.message : 'Unknown error'), { show_alert: true });
+    }
+  });
+
+  bot.action(/^admin:job:retry:(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const jobId = Number(ctx.match[1]);
+    try {
+      const job = await retryJob(jobId);
+      await ctx.answerCbQuery('Job queued again.');
+      return ctx.editMessageText('🔄 <b>Job queued again</b>\\n\\n#' + job.id + ' · <code>' + escapeHtml(job.code) + '</code>', {
+        parse_mode: 'HTML', ...Markup.inlineKeyboard([
+          [Markup.button.callback('⚙️ View Jobs', 'admin:jobs')],
+          [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+        ]),
+      });
+    } catch (err) {
+      return ctx.answerCbQuery('Retry failed: ' + (err instanceof Error ? err.message : 'Unknown error'), { show_alert: true });
+    }
   });
 
   bot.action('admin:system', async (ctx) => {
@@ -1639,6 +1778,24 @@ bot.command('start', async (ctx) => {
         return showQuotaPlanMenu(ctx);
       } catch (err) {
         return ctx.reply('❌ Failed to save quota: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+      }
+    }
+
+    if (session.action === 'user_lookup' && 'text' in ctx.message) {
+      const input = ctx.message.text.trim();
+      if (input === '/cancel') {
+        await clearAdminSession(ctx.from.id);
+        return ctx.reply('User search cancelled.', { ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ User Management', 'admin:users')]]) });
+      }
+      if (!/^\\d{1,20}$/.test(input) || !Number.isSafeInteger(Number(input))) {
+        return ctx.reply('❌ Send a valid numeric Telegram user ID, or /cancel.');
+      }
+      const userId = Number(input);
+      await clearAdminSession(ctx.from.id);
+      try {
+        return await showAdminUserProfile(ctx, userId);
+      } catch (err) {
+        return ctx.reply('❌ Could not load user profile: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
       }
     }
 
