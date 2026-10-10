@@ -13,7 +13,7 @@ import { getSetting, setSetting } from '../services/settings.ts';
 import { classifyTelegramError, withTelegramRetry } from '../services/telegramErrors.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 import { deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery, showForceSubAdminMenu, showAdminSettings, formatTimer } from './helpers.ts';
-import { PREMIUM_PACKAGES, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice } from './premium.ts';
+import { getPremiumPackages, savePremiumPackage, removePremiumPackage, togglePremiumPackage, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice } from './premium.ts';
 
 export const botDeps = {
   Markup, config, isAdmin, normalizeCode, extractCodes, cleanActressList, cleanTitle,
@@ -26,5 +26,5 @@ export const botDeps = {
   getAdminSession, setAdminSession, clearAdminSession, javtifulProvider, sendDumpVideoToUser, storeThumbnailInDumpChannel,
   installMessageDeleteTimer, getSetting, setSetting, classifyTelegramError, withTelegramRetry, recordVideoDeliveryEvent, getVideoDeliveryAnalytics,
   deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery,
-  showForceSubAdminMenu, showAdminSettings, formatTimer, PREMIUM_PACKAGES, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice,
+  showForceSubAdminMenu, showAdminSettings, formatTimer, getPremiumPackages, savePremiumPackage, removePremiumPackage, togglePremiumPackage, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice,
 };
