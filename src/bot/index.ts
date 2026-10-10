@@ -356,9 +356,12 @@ bot.command('start', async (ctx) => {
     try {
       const promos = await listPromoCodes(50);
       if (!promos.length) {
-        return ctx.reply('🎟️ <b>No promo codes yet</b>\n\nCreate one with /createpromo or generate a batch with /createpromos.', {
+        return ctx.reply('🎟️ <b>No promo codes yet</b>\n\nUse the button below to create your first promo with a step-by-step wizard.', {
           parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('➕ Create Promo', 'promos:create_help')],
+            [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+          ]),
         });
       }
 
