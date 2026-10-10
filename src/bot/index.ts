@@ -78,19 +78,130 @@ bot.command('start', async (ctx) => {
     }
 
     const welcome = [
-      '<b>Welcome to PiratecultJAV Bot</b>',
+      '╭━━━━━━━━━━━━━━━━━━━━╮',
+      '      ✦ <b>PIRATECULTJAV</b> ✦',
+      '╰━━━━━━━━━━━━━━━━━━━━╯',
       '',
-      'Send a code or keyword to search the catalog.',
+      '👋 Welcome to your video library assistant.',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '⚡ <b>WHAT WOULD YOU LIKE TO DO?</b>',
+      '',
+      '🔎 Search the catalog by code or keyword.',
+      '🎬 Open a video using the website’s Get Video button.',
+      '📊 Check your plan and daily allowance.',
+      '',
+      '💡 <b>Try a code</b>',
+      '<code>ADN-001</code>  ·  <code>STAR-765</code>',
+      '',
+      '<i>Choose an option below to get started.</i>'
+    ].join('\\n');
+
+    return ctx.reply(welcome, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
+        [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
+        [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
+        [Markup.button.callback('❓ Help', 'menu:help')],
+      ]),
+    });
+  });
+
+  // Help and search shortcuts use the same navigation style as the home screen.
+  bot.command('help', async (ctx) => {
+    const helpText = [
+      '❓ <b>PIRATECULTJAV HELP</b>',
+      '',
+      '🔎 <b>Search:</b> send a video code or keyword, or tap Search Catalog.',
+      '🎬 <b>Website delivery:</b> tap Get Video on the website to open the matching video here.',
+      '📊 <b>Account:</b> check your plan, daily allowance, and referrals.',
       '',
       '<b>Examples</b>',
       '<code>ADN-001</code>',
       '<code>STAR-765</code>',
-      '<code>JUR-270</code>',
       '',
-      'Type your code below.'
-    ].join('\n');
+      'Use the buttons below to navigate.'
+    ].join('\\n');
+    return ctx.reply(helpText, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
+        [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('🏠 Home', 'menu:home')],
+      ]),
+    });
+  });
 
-    return ctx.reply(welcome, { parse_mode: 'HTML' });
+  bot.command('search', async (ctx) => {
+    return ctx.reply(
+      '🔎 <b>Search the catalog</b>\\n\\nSend a video code (for example <code>ADN-001</code>) or a keyword in your next message.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]) },
+    );
+  });
+
+  bot.action('menu:home', async (ctx) => {
+    await ctx.answerCbQuery();
+    const welcome = [
+      '╭━━━━━━━━━━━━━━━━━━━━╮',
+      '      ✦ <b>PIRATECULTJAV</b> ✦',
+      '╰━━━━━━━━━━━━━━━━━━━━╯',
+      '',
+      '👋 Welcome to your video library assistant.',
+      '',
+      '━━━━━━━━━━━━━━━━━━━━',
+      '⚡ <b>WHAT WOULD YOU LIKE TO DO?</b>',
+      '',
+      '🔎 Search the catalog by code or keyword.',
+      '🎬 Open a video using the website’s Get Video button.',
+      '📊 Check your plan and daily allowance.',
+      '',
+      '💡 <b>Try a code</b>',
+      '<code>ADN-001</code>  ·  <code>STAR-765</code>',
+      '',
+      '<i>Choose an option below to get started.</i>'
+    ].join('\\n');
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
+      [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
+      [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
+      [Markup.button.callback('❓ Help', 'menu:help')],
+    ]);
+    return ctx.editMessageText(welcome, { parse_mode: 'HTML', ...keyboard }).catch(() =>
+      ctx.reply(welcome, { parse_mode: 'HTML', ...keyboard })
+    );
+  });
+
+  bot.action('menu:search', async (ctx) => {
+    await ctx.answerCbQuery();
+    const prompt = '🔎 <b>Search the catalog</b>\\n\\nSend a video code or keyword in your next message.\\n\\nExamples: <code>ADN-001</code>, <code>STAR-765</code>';
+    return ctx.reply(prompt, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('🏠 Home', 'menu:home')]]),
+    });
+  });
+
+  bot.action('menu:help', async (ctx) => {
+    await ctx.answerCbQuery();
+    const helpText = [
+      '❓ <b>PIRATECULTJAV HELP</b>',
+      '',
+      '🔎 <b>Search:</b> send a video code or keyword, or tap Search Catalog.',
+      '🎬 <b>Website delivery:</b> tap Get Video on the website to open the matching video here.',
+      '📊 <b>Account:</b> check your plan, daily allowance, and referrals.',
+      '',
+      '<b>Examples</b>',
+      '<code>ADN-001</code>',
+      '<code>STAR-765</code>',
+      '',
+      'Use the buttons below to navigate.'
+    ].join('\\n');
+    const keyboard = Markup.inlineKeyboard([
+      [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
+      [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('🏠 Home', 'menu:home')],
+    ]);
+    return ctx.editMessageText(helpText, { parse_mode: 'HTML', ...keyboard }).catch(() =>
+      ctx.reply(helpText, { parse_mode: 'HTML', ...keyboard })
+    );
   });
 
   // 3. Cancel command
@@ -1438,6 +1549,20 @@ export async function startBotPolling(): Promise<boolean> {
     try {
       const me = await candidateBot.telegram.getMe();
       console.log(`[TelegramBot] ${candidate.toUpperCase()} bot validated: @${me.username || me.id}`);
+
+      // Keep Telegram's native command menu discoverable. This is best-effort so a
+      // command-menu API issue cannot prevent an otherwise valid bot from starting.
+      await candidateBot.telegram.setMyCommands([
+        { command: 'start', description: 'Open the main menu' },
+        { command: 'search', description: 'Search the video catalog' },
+        { command: 'dashboard', description: 'View your account dashboard' },
+        { command: 'plan', description: 'Check your plan and limits' },
+        { command: 'leaderboard', description: 'View referral leaderboard' },
+        { command: 'help', description: 'How to use the bot' },
+        { command: 'cancel', description: 'Cancel the current operation' },
+      ]).catch(err => {
+        console.warn('[TelegramBot] Could not register command menu:', err instanceof Error ? err.message : String(err));
+      });
 
       // Verify the replacement bot can access the persistent dump channel.
       if (config.dumpChatId) {
