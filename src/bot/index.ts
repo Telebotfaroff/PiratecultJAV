@@ -934,6 +934,36 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
+  bot.command('setjoinchannel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setjoinchannel(?:@\\w+)?\\s*/i, '').trim() : '';
+    if (!/^-?\\d+$/.test(value)) return ctx.reply('Usage: /setjoinchannel <channel_id>\\nExample: /setjoinchannel -1001234567890\\nUse /setjoinchannel off to disable.');
+    await setSetting('notification_join_premium_channel', value);
+    return ctx.reply('✅ New-user and Premium-purchase notifications will be sent to <code>' + escapeHtml(value) + '</code>. Make sure the bot is an administrator in that channel.', { parse_mode: 'HTML' });
+  });
+
+  bot.command('setnotfoundchannel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const value = 'text' in ctx.message ? ctx.message.text.replace(/^\\/setnotfoundchannel(?:@\\w+)?\\s*/i, '').trim() : '';
+    if (value.toLowerCase() === 'off') {
+      await setSetting('notification_not_found_channel', '');
+      return ctx.reply('✅ Not-found notifications disabled.');
+    }
+    if (!/^-?\\d+$/.test(value)) return ctx.reply('Usage: /setnotfoundchannel <channel_id>\\nExample: /setnotfoundchannel -1001234567890\\nUse /setnotfoundchannel off to disable.');
+    await setSetting('notification_not_found_channel', value);
+    return ctx.reply('✅ Not-found search notifications will be sent to <code>' + escapeHtml(value) + '</code>. Make sure the bot is an administrator in that channel.', { parse_mode: 'HTML' });
+  });
+
+  bot.command('notificationchannels', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
+    const joinChannel = await getSetting<string>('notification_join_premium_channel', '');
+    const notFoundChannel = await getSetting<string>('notification_not_found_channel', '');
+    return ctx.reply(
+      '📣 <b>Notification Channels</b>\\n\\n👤 New users + 💎 Premium purchases: <code>' + escapeHtml(joinChannel || 'Not configured') + '</code>\\n🔎 Not-found searches: <code>' + escapeHtml(notFoundChannel || 'Not configured') + '</code>\\n\\nCommands:\\n<code>/setjoinchannel -1001234567890</code>\\n<code>/setnotfoundchannel -1001234567890</code>\\nUse <code>off</code> with either command to disable it.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]) },
+    );
+  });
+
   bot.command('admin', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
     return showAdminSettings(ctx);
