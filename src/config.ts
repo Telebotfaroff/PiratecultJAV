@@ -11,6 +11,9 @@ export interface AppConfig {
   adminIds: number[];
   javtifulBaseUrl: string;
   port: number;
+  webhookUrl: string;
+  webhookSecret: string;
+  webhookPath: string;
   adminApiKey: string;
   adminSessionTtlMs: number;
   premium7Stars: number;
@@ -36,6 +39,9 @@ export const config: AppConfig = {
   adminIds,
   javtifulBaseUrl: (process.env.JAVTIFUL_BASE_URL || 'https://javtiful.com').replace(/\/$/, ''),
   port: parseInt(process.env.PORT || '3000', 10),
+  webhookUrl: (process.env.WEBHOOK_URL || '').replace(/\/$/, ''),
+  webhookSecret: process.env.WEBHOOK_SECRET || '',
+  webhookPath: (() => { const value = process.env.WEBHOOK_PATH || '/telegram-webhook'; return value.startsWith('/') ? value : `/${value}`; })(),
   adminApiKey: process.env.ADMIN_API_KEY || '',
   adminSessionTtlMs: 12 * 60 * 60 * 1000,
   premium7Stars: parseInt(process.env.PREMIUM_7_STARS || '50', 10),
