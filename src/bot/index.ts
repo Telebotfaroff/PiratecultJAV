@@ -441,10 +441,95 @@ bot.command('start', async (ctx) => {
   bot.action('promos:create_help', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
+    await setAdminSession(ctx.from!.id, 'promo_create', 'awaiting_code', {});
     return ctx.reply(
-      '➕ <b>Create a promo</b>\n\nSingle code:\n<code>/createpromo AUTO premium 30 100</code>\n\nBatch of 10 unique codes:\n<code>/createpromos 10 premium 30 1</code>\n\nRewards: <code>premium</code>, <code>semi_premium</code>, or <code>unlimited</code>.\nUse <code>-</code> for unlimited uses or no expiry.',
-      { parse_mode: 'HTML' },
+      '➕ <b>Create Promo — Step 1 of 5</b>\n\nEnter a promo code, or send <code>AUTO</code> to generate one.\n\nCode must be 3–64 characters using letters, numbers, hyphens, or underscores.\nSend /cancel to stop.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]) },
     );
+  });
+
+  bot.action('promos:wizard:uses:unlimited', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const session = await getAdminSession(ctx.from!.id);
+    if (session?.action !== 'promo_create' || session.step !== 'awaiting_uses') {
+      return ctx.answerCbQuery('This promo wizard expired. Start again.', { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await setAdminSession(ctx.from!.id, 'promo_create', 'awaiting_expiry', { ...(session.payload || {}), maxUses: null });
+    return ctx.reply('➕ <b>Create Promo — Step 5 of 5</b>\n\nEnter an expiry date/time in ISO format, or choose no expiry.', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('♾️ No Expiry', 'promos:wizard:expiry:none')], [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]),
+    });
+  });
+
+  bot.action('promos:wizard:expiry:none', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const session = await getAdminSession(ctx.from!.id);
+    if (session?.action !== 'promo_create' || session.step !== 'awaiting_expiry') {
+      return ctx.answerCbQuery('This promo wizard expired. Start again.', { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    const payload = { ...(session.payload || {}), expiresAt: null };
+    await setAdminSession(ctx.from!.id, 'promo_create', 'awaiting_confirmation', payload);
+    const rewardText = payload.reward === 'unlimited' ? 'Unlimited access' : payload.reward === 'premium' ? 'Premium' : 'Semi Premium';
+    const codeText = payload.code === 'AUTO' ? 'Auto-generated on confirmation' : escapeHtml(String(payload.code || ''));
+    return ctx.reply(
+      `🧾 <b>Review Promo</b>\n\n🎟️ Code: <code>${codeText}</code>\n🎁 Reward: <b>${rewardText}</b>\n📅 Duration: <b>${payload.days} day(s)</b>\n👥 Max uses: <b>${payload.maxUses ?? 'Unlimited'}</b>\n⏰ Expiry: <b>No expiry</b>\n\nConfirm to create this promo.`,
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ Confirm & Create', 'promos:wizard:confirm')], [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]) },
+    );
+  });
+
+  bot.action(/^promos:wizard:reward:(premium|semi_premium|unlimited)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const reward = ctx.match[1];
+    const session = await getAdminSession(ctx.from!.id);
+    if (session?.action !== 'promo_create' || session.step !== 'awaiting_reward') {
+      return ctx.answerCbQuery('This promo wizard expired. Start again.', { show_alert: true });
+    }
+    await ctx.answerCbQuery();
+    await setAdminSession(ctx.from!.id, 'promo_create', 'awaiting_days', { ...(session.payload || {}), reward });
+    return ctx.reply('➕ <b>Create Promo — Step 3 of 5</b>\n\nHow many days should the reward last? Send a whole number from <code>1</code> to <code>3650</code>.', {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([[Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]),
+    });
+  });
+
+  bot.action('promos:wizard:confirm', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const session = await getAdminSession(ctx.from!.id);
+    if (session?.action !== 'promo_create' || session.step !== 'awaiting_confirmation') {
+      return ctx.answerCbQuery('This promo confirmation expired. Start again.', { show_alert: true });
+    }
+    await ctx.answerCbQuery('Creating promo…');
+    const payload = session.payload || {};
+    const codeInput = String(payload.code || '');
+    const code = codeInput === 'AUTO' ? `PC-${randomBytes(5).toString('hex').toUpperCase()}` : codeInput;
+    const reward = String(payload.reward || '');
+    const days = Number(payload.days);
+    const maxUses = payload.maxUses === null ? null : Number(payload.maxUses);
+    const expiresAt = payload.expiresAt ? String(payload.expiresAt) : null;
+    const rewardType = reward === 'unlimited' ? 'unlimited' : 'plan';
+    const rewardPlan = rewardType === 'plan' ? reward as 'premium' | 'semi_premium' : null;
+    try {
+      const ok = await createPromoCode(code, rewardType, rewardPlan, days, maxUses, expiresAt, ctx.from!.id);
+      if (!ok) return ctx.reply('❌ Promo was not created. The code may already exist. Start again with Create Promo.');
+      await clearAdminSession(ctx.from!.id);
+      const rewardText = rewardType === 'unlimited' ? `∞ Unlimited access for ${days} day(s)` : `${rewardPlan === 'premium' ? '💎 Premium' : '⚡ Semi Premium'} for ${days} day(s)`;
+      return ctx.reply(
+        `✅ <b>Promo created</b>\n\n🎟️ Code: <code>${escapeHtml(code)}</code>\n🎁 Reward: <b>${rewardText}</b>\n👥 Uses: <b>${maxUses ?? 'Unlimited'}</b>\n⏰ Expiry: <b>${expiresAt ? escapeHtml(new Date(expiresAt).toLocaleString()) : 'No expiry'}</b>`,
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('🎟️ View Promo Manager', 'promos:page:1')], [Markup.button.callback('➕ Create Another', 'promos:create_help')]]) },
+      );
+    } catch (err) {
+      console.error('[Promo] Wizard create failed:', err);
+      return ctx.reply('❌ Failed to create promo: ' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
+    }
+  });
+
+  bot.action('promos:wizard:cancel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery('Cancelled');
+    await clearAdminSession(ctx.from!.id);
+    return ctx.reply('Promo creation cancelled.', { ...Markup.inlineKeyboard([[Markup.button.callback('🎟️ Promo Manager', 'promos:page:1')]]) });
   });
   bot.command('deactivatepromo', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized.');
@@ -1998,6 +2083,71 @@ bot.command('start', async (ctx) => {
     const session = await getAdminSession(ctx.from.id);
     if (!session) {
       return next();
+    }
+
+    if (session.action === 'promo_create' && 'text' in ctx.message) {
+      const input = ctx.message.text.trim();
+      if (input === '/cancel') {
+        await clearAdminSession(ctx.from.id);
+        return ctx.reply('Promo creation cancelled.');
+      }
+      const payload = session.payload || {};
+      if (session.step === 'awaiting_code') {
+        const code = input.toUpperCase();
+        if (code !== 'AUTO' && !/^[A-Z0-9_-]{3,64}$/.test(code)) {
+          return ctx.reply('❌ Enter 3–64 letters, numbers, hyphens, or underscores, or send AUTO.');
+        }
+        await setAdminSession(ctx.from.id, 'promo_create', 'awaiting_reward', { code });
+        return ctx.reply('➕ <b>Create Promo — Step 2 of 5</b>\n\nChoose the reward:', {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('💎 Premium', 'promos:wizard:reward:premium')],
+            [Markup.button.callback('⚡ Semi Premium', 'promos:wizard:reward:semi_premium')],
+            [Markup.button.callback('∞ Unlimited Access', 'promos:wizard:reward:unlimited')],
+            [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')],
+          ]),
+        });
+      }
+      if (session.step === 'awaiting_days') {
+        const days = Number(input);
+        if (!/^\\d+$/.test(input) || !Number.isInteger(days) || days < 1 || days > 3650) {
+          return ctx.reply('❌ Send a whole number from 1 to 3650 days, or /cancel.');
+        }
+        await setAdminSession(ctx.from.id, 'promo_create', 'awaiting_uses', { ...payload, days });
+        return ctx.reply('➕ <b>Create Promo — Step 4 of 5</b>\n\nHow many times can this code be redeemed in total? Send a positive number, or <code>-</code> for unlimited uses.', {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('♾️ Unlimited Uses', 'promos:wizard:uses:unlimited')], [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]),
+        });
+      }
+      if (session.step === 'awaiting_uses') {
+        const maxUses = input === '-' ? null : Number(input);
+        if (maxUses !== null && (!/^\\d+$/.test(input) || !Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 1000000)) {
+          return ctx.reply('❌ Send a number from 1 to 1000000, or - for unlimited uses.');
+        }
+        await setAdminSession(ctx.from.id, 'promo_create', 'awaiting_expiry', { ...payload, maxUses });
+        return ctx.reply('➕ <b>Create Promo — Step 5 of 5</b>\n\nEnter an expiry date/time in ISO format (for example <code>2026-12-31T23:59:59Z</code>), or send <code>-</code> for no expiry.', {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([[Markup.button.callback('♾️ No Expiry', 'promos:wizard:expiry:none')], [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]),
+        });
+      }
+      if (session.step === 'awaiting_expiry') {
+        let expiresAt: string | null = null;
+        if (input !== '-') {
+          const parsed = new Date(input);
+          if (Number.isNaN(parsed.getTime()) || parsed.getTime() <= Date.now()) {
+            return ctx.reply('❌ Enter a valid future date/time in ISO format, or send - for no expiry.');
+          }
+          expiresAt = parsed.toISOString();
+        }
+        const updated = { ...payload, expiresAt };
+        await setAdminSession(ctx.from.id, 'promo_create', 'awaiting_confirmation', updated);
+        const rewardText = updated.reward === 'unlimited' ? 'Unlimited access' : updated.reward === 'premium' ? 'Premium' : 'Semi Premium';
+        const codeText = updated.code === 'AUTO' ? 'Auto-generated on confirmation' : escapeHtml(String(updated.code));
+        return ctx.reply(
+          `🧾 <b>Review Promo</b>\n\n🎟️ Code: <code>${codeText}</code>\n🎁 Reward: <b>${rewardText}</b>\n📅 Duration: <b>${updated.days} day(s)</b>\n👥 Max uses: <b>${updated.maxUses ?? 'Unlimited'}</b>\n⏰ Expiry: <b>${expiresAt ? escapeHtml(new Date(expiresAt).toLocaleString()) : 'No expiry'}</b>\n\nConfirm to create this promo.`,
+          { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('✅ Confirm & Create', 'promos:wizard:confirm')], [Markup.button.callback('❌ Cancel', 'promos:wizard:cancel')]]) },
+        );
+      }
     }
 
     if (session.action === 'premium_package' && 'text' in ctx.message) {
