@@ -1844,7 +1844,14 @@ bot.command('start', async (ctx) => {
   bot.action('user:promo', async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
     await ctx.answerCbQuery();
-    return ctx.reply('🎟️ <b>Redeem Promo</b>\n\nUse <code>/promo YOUR_CODE</code> to redeem a promo code.', { parse_mode: 'HTML' });
+    const text = '🎟️ <b>Redeem Promo</b>\n\nUse <code>/promo YOUR_CODE</code> to redeem a promo code.';
+    const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ My Dashboard', 'user:plan')]]);
+    try {
+      return await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    } catch (err) {
+      if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    }
   });
 
   bot.action('user:leaderboard', async (ctx) => {
