@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto';
 import { Telegraf, Markup } from 'telegraf';
 import { config, isAdmin } from '../config.ts';
 import { normalizeCode, cleanActressList, cleanTitle } from '../services/code.ts';
@@ -5,7 +6,7 @@ import { searchVideos, getVideoById, getVideoByCode, countVideos, updateVideoMet
 import { countJobs } from '../services/indexJobs.ts';
 import { consumeVideoDownload, refundVideoDownload, getUserDashboard, getReferralLeaderboard, completeReferral, countUsers } from '../services/users.ts';
 import { checkUserForceSub, getAllForceSubChannels } from '../services/forceSub.ts';
-import { getSetting } from '../services/settings.ts';
+import { getSetting, setSetting } from '../services/settings.ts';
 import { sendDumpVideoToUser } from '../services/dump.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 import { getActiveBotRole } from './state.ts';
@@ -16,14 +17,32 @@ async function notifyNotFound(ctx: any, query: string, source: string): Promise<
     if (!channel) return;
     const user = ctx.from;
     const safe = (value: unknown) => escapeHtml(value ?? '—');
+    const requestId = randomBytes(6).toString('hex');
+    const pending = await getSetting<any[]>('pending_not_found_notifications', []);
+    const requests = Array.isArray(pending) ? pending : [];
+    requests.push({
+      id: requestId,
+      userId: user?.id,
+      query: String(query).slice(0, 120),
+      source,
+      createdAt: new Date().toISOString(),
+      username: user?.username || null,
+      firstName: user?.first_name || null,
+    });
+    await setSetting('pending_not_found_notifications', requests.slice(-500));
+
     await ctx.telegram.sendMessage(
       channel,
       '🔎 <b>Search result not found</b>\n\nQuery: <code>' + safe(query) + '</code>' +
       '\nSource: ' + safe(source) +
       '\nUser: ' + safe(user ? [user.first_name, user.last_name].filter(Boolean).join(' ') : 'Unknown') +
       '\nUsername: ' + safe(user?.username ? '@' + user.username : '—') +
-      '\nUser ID: <code>' + safe(user?.id) + '</code>',
-      { parse_mode: 'HTML' },
+      '\nUser ID: <code>' + safe(user?.id) + '</code>' +
+      '\n\n<i>Tap below if you want the bot to notify this user when a matching video is added.</i>',
+      {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🔔 Notify user when added', 'notfound:watch:' + requestId)]]),
+      },
     );
   } catch (err) {
     console.warn('[Notifications] Not-found notification failed:', err instanceof Error ? err.message : String(err));
