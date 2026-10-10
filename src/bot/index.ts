@@ -1593,7 +1593,7 @@ bot.command('start', async (ctx) => {
       return;
     }
     const query = match[1].trim();
-    const totalMatch = messageText.match(/Found:\s*(\\d+)/i);
+    const totalMatch = messageText.match(/Found:\s*(\d+)/i);
     const total = totalMatch ? Number(totalMatch[1]) : 0;
     await ctx.answerCbQuery();
     return ctx.editMessageText(
