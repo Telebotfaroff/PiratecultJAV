@@ -420,13 +420,16 @@ async function showForceSubAdminMenu(ctx: any) {
     [Markup.button.callback(enabled ? '🔴 Disable Global' : '🟢 Enable Global', 'settings:forcesub:toggle')],
     [Markup.button.callback('➕ Add Channel', 'settings:forcesub:add')],
   ];
-  for (const ch of channels) rows.push([
-    Markup.button.callback((ch.is_active ? '🔴 Disable ' : '🟢 Enable ') + ch.title.slice(0, 14), 'settings:forcesub:toggle-channel:' + ch.id),
-    Markup.button.callback(ch.request_mode ? '📨 Request: ON' : '📨 Request: OFF', 'settings:forcesub:request:' + ch.id),
-  ]);
-  for (const ch of channels) rows.push([
-    Markup.button.callback('🗑️ Delete ' + ch.title.slice(0, 14), 'settings:forcesub:confirm-delete:' + ch.id),
-  ]);
+  for (const ch of channels) {
+    rows.push([
+      Markup.button.callback((ch.is_active ? '🔴 Disable ' : '🟢 Enable ') + ch.title.slice(0, 14), 'settings:forcesub:toggle-channel:' + ch.id),
+      Markup.button.callback(ch.request_mode ? '📨 Request: ON' : '📨 Request: OFF', 'settings:forcesub:request:' + ch.id),
+    ]);
+    rows.push([
+      Markup.button.callback('🧪 Test ' + ch.title.slice(0, 18), 'settings:forcesub:test:' + ch.id),
+      Markup.button.callback('🗑️ Delete', 'settings:forcesub:confirm-delete:' + ch.id),
+    ]);
+  }
   rows.push([Markup.button.callback('🔄 Refresh', 'settings:forcesub')]);
   rows.push([Markup.button.callback('⬅️ Admin Center', 'settings:main')]);
   if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
