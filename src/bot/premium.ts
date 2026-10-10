@@ -92,7 +92,7 @@ export async function sendPremiumStore(ctx: any) {
   ]);
   rows.push([Markup.button.callback('⬅️ My Dashboard', 'user:plan')]);
   return ctx.reply(
-    '💎 <b>Premium Access</b>\\n\\nPremium gives you unlimited video downloads for the selected period.\\n\\nChoose a package:',
+    '💎 <b>Premium Access</b>\n\nPremium gives you unlimited video downloads for the selected period.\n\nChoose a package:',
     { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
   );
 }
