@@ -1911,8 +1911,8 @@ bot.command('start', async (ctx) => {
       if (message.length > 3500) return ctx.reply('Message is too long for a safe preview. Please keep it under 3500 characters or /cancel.');
       await setAdminSession(ctx.from.id, 'broadcast', 'awaiting_confirmation', { message });
       return ctx.reply(
-        '📣 <b>Broadcast Preview</b>\\n\\n' + message + '\\n\\n⚠️ This will be sent to all active users. Continue?',
-        { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+        '📣 BROADCAST PREVIEW\\n\\n' + message + '\\n\\n⚠️ This will be sent to all active users. Continue?',
+        { ...Markup.inlineKeyboard([
           [Markup.button.callback('✅ Send Broadcast', 'settings:broadcast:send')],
           [Markup.button.callback('❌ Cancel', 'settings:broadcast:cancel')],
         ]) },
