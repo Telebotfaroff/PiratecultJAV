@@ -786,24 +786,6 @@ bot.command('start', async (ctx) => {
     return showAdminSettings(ctx);
   });
 
-  bot.action('admin:users', async (ctx) => {
-    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
-    await ctx.answerCbQuery();
-    const users = await countUsers();
-    return ctx.editMessageText(
-      '👥 <b>User Management</b>\n\n' +
-      `Total users: <b>${users}</b>\n\n` +
-      'Use the commands below for direct actions:',
-      {
-        parse_mode: 'HTML',
-        ...Markup.inlineKeyboard([
-          [Markup.button.callback('📣 Broadcast', 'settings:broadcast')],
-          [Markup.button.callback('⬅️ Back', 'settings:main')],
-        ]),
-      },
-    );
-  });
-
   async function showQuotaPlanMenu(ctx: any, edit = false) {
     const q = await getDownloadQuotaSettings();
     const text =
@@ -1326,7 +1308,7 @@ bot.command('start', async (ctx) => {
         }));
         if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
       }
-      return ctx.editMessageText('📣 <b>Broadcast finished</b>\\n\\n👥 Recipients: <b>' + userIds.length + '</b>\\n✅ Sent: <b>' + sent + '</b>\\n❌ Failed: <b>' + failed + '</b>', {
+      return ctx.editMessageText('📣 <b>Broadcast finished</b>\n\n👥 Recipients: <b>' + userIds.length + '</b>\n✅ Sent: <b>' + sent + '</b>\n❌ Failed: <b>' + failed + '</b>', {
         parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
       });
     } catch (err) {
@@ -1911,7 +1893,7 @@ bot.command('start', async (ctx) => {
       if (message.length > 3500) return ctx.reply('Message is too long for a safe preview. Please keep it under 3500 characters or /cancel.');
       await setAdminSession(ctx.from.id, 'broadcast', 'awaiting_confirmation', { message });
       return ctx.reply(
-        '📣 BROADCAST PREVIEW\\n\\n' + message + '\\n\\n⚠️ This will be sent to all active users. Continue?',
+        '📣 BROADCAST PREVIEW\n\n' + message + '\n\n⚠️ This will be sent to all active users. Continue?',
         { ...Markup.inlineKeyboard([
           [Markup.button.callback('✅ Send Broadcast', 'settings:broadcast:send')],
           [Markup.button.callback('❌ Cancel', 'settings:broadcast:cancel')],
