@@ -10,6 +10,26 @@ import { sendDumpVideoToUser } from '../services/dump.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 import { getActiveBotRole } from './state.ts';
 
+async function notifyNotFound(ctx: any, query: string, source: string): Promise<void> {
+  try {
+    const channel = await getSetting<string>('notification_not_found_channel', '');
+    if (!channel) return;
+    const user = ctx.from;
+    const safe = (value: unknown) => escapeHtml(value ?? '—');
+    await ctx.telegram.sendMessage(
+      channel,
+      '🔎 <b>Search result not found</b>\n\nQuery: <code>' + safe(query) + '</code>' +
+      '\nSource: ' + safe(source) +
+      '\nUser: ' + safe(user ? [user.first_name, user.last_name].filter(Boolean).join(' ') : 'Unknown') +
+      '\nUsername: ' + safe(user?.username ? '@' + user.username : '—') +
+      '\nUser ID: <code>' + safe(user?.id) + '</code>',
+      { parse_mode: 'HTML' },
+    );
+  } catch (err) {
+    console.warn('[Notifications] Not-found notification failed:', err instanceof Error ? err.message : String(err));
+  }
+}
+
 async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, source: 'deep_link' | 'search' | 'callback' | 'unknown' = 'unknown', options: { suppressDeleteReminderMessage?: boolean } = {}) {
   let quotaConsumed = false;
   try {
@@ -35,6 +55,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
         return handleSearchQuery(ctx, rawCode, 0);
       } else {
         await recordVideoDeliveryEvent({ eventType: 'not_found', telegramUserId: ctx.from?.id, code: rawCode, source });
+        await notifyNotFound(ctx, rawCode, source);
         return ctx.reply(`❌ Video with code "${rawCode}" was not found in catalog.`);
       }
     }
@@ -326,6 +347,7 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
     const { videos, total } = await searchVideos(rawQuery, pageSize, offset);
 
     if (videos.length === 0) {
+      await notifyNotFound(ctx, rawQuery, 'catalog search');
       const msg = `❌ No videos found matching <b>${escapeHtml(rawQuery)}</b>.\n\n💡 <i>Try searching with a code (e.g. <code>ADN-001</code>, <code>ROYD-312</code>) or keyword.</i>`;
       if (ctx.callbackQuery) {
         return ctx.editMessageText(msg, { parse_mode: 'HTML' }).catch(() => ctx.reply(msg, { parse_mode: 'HTML' }));
@@ -443,6 +465,7 @@ async function downloadAllSearchResults(bot: Telegraf, ctx: any, rawQuery: strin
     } while (offset < total);
 
     if (!videos.length) {
+      await notifyNotFound(ctx, query, 'download all search results');
       return ctx.reply('❌ No available videos were found for <b>' + escapeHtml(query) + '</b>.', { parse_mode: 'HTML' });
     }
 
