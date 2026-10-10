@@ -427,7 +427,8 @@ async function showForceSubAdminMenu(ctx: any) {
   for (const ch of channels) rows.push([
     Markup.button.callback('🗑️ Delete ' + ch.title.slice(0, 14), 'settings:forcesub:delete:' + ch.id),
   ]);
-  rows.push([Markup.button.callback('⬅️ Back', 'settings:main')]);
+  rows.push([Markup.button.callback('🔄 Refresh', 'settings:forcesub')]);
+  rows.push([Markup.button.callback('⬅️ Admin Center', 'settings:main')]);
   if (ctx.callbackQuery) return ctx.editMessageText(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
   return ctx.reply(lines.join('\n'), { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) });
 }
