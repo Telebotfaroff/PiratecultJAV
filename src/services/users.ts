@@ -274,6 +274,17 @@ export interface PromoRedemptionResult {
 }
 
 export async function redeemPromoCode(userId: number, code: string): Promise<PromoRedemptionResult> {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{3,64}$/.test(normalizedCode)) {
+    return {
+      success: false,
+      message: 'Promo code format is invalid. Use 3–64 letters, numbers, hyphens, or underscores.',
+      reward_type: null,
+      reward_plan: null,
+      reward_days: 0,
+      expires_at: null,
+    };
+  }
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('redeem_promo_code', {
     p_user_id: userId,
@@ -358,6 +369,24 @@ export async function createPromoCode(
   expiresAt: string | null,
   createdBy: number,
 ): Promise<boolean> {
+  const normalizedCode = code.trim().toUpperCase();
+  if (!/^[A-Z0-9_-]{3,64}$/.test(normalizedCode)) {
+    throw new Error('Promo code must be 3–64 characters using A–Z, 0–9, underscore, or hyphen.');
+  }
+  if (!Number.isInteger(rewardDays) || rewardDays < 1 || rewardDays > 3650) {
+    throw new Error('Promo reward duration must be 1–3650 days.');
+  }
+  if (maxUses !== null && (!Number.isSafeInteger(maxUses) || maxUses < 1 || maxUses > 1000000)) {
+    throw new Error('Promo max uses must be 1–1,000,000 or null.');
+  }
+  if (expiresAt && (!Number.isFinite(Date.parse(expiresAt)) || Date.parse(expiresAt) <= Date.now())) {
+    throw new Error('Promo expiry must be a future date/time.');
+  }
+  if ((rewardType === 'unlimited' && rewardPlan !== null) ||
+      (rewardType === 'plan' && !['premium', 'semi_premium'].includes(String(rewardPlan)))) {
+    throw new Error('Invalid promo reward configuration.');
+  }
+
   const supabase = getSupabase();
   const { data, error } = await supabase.rpc('create_promo_code', {
     p_code: normalizedCode,
