@@ -100,9 +100,19 @@ function createBot(token: string): Telegraf {
   // Let an admin opt a requester into a one-time alert when a matching catalog item appears.
   bot.action(/^notfound:watch:([a-f0-9]+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Admin access required.', { show_alert: true });
-    await ctx.answerCbQuery('Notification watch enabled.');
+    const requestId = ctx.match[1];
+    const alerts = await getSetting<any[]>('not_found_alerts', []);
+    const request = Array.isArray(alerts) ? alerts.find((item) => item?.id === requestId) : null;
+    if (!request) return ctx.answerCbQuery('This request has expired.', { show_alert: true });
+    const pending = await getSetting<any[]>('pending_not_found_notifications', []);
+    const requests = Array.isArray(pending) ? pending : [];
+    if (!requests.some((item) => item?.id === requestId)) {
+      requests.push(request);
+      await setSetting('pending_not_found_notifications', requests.slice(-500));
+    }
+    await ctx.answerCbQuery('We will notify the user when a match is added.');
     return ctx.editMessageReplyMarkup({
-      inline_keyboard: [[Markup.button.callback('🔔 Watching for this video', 'notfound:watching')]],
+      inline_keyboard: [[Markup.button.callback('🔔 User will be notified when added', 'notfound:watching')]],
     }).catch(() => undefined);
   });
 
