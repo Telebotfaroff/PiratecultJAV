@@ -1298,6 +1298,52 @@ bot.command('start', async (ctx) => {
     return ctx.editMessageText('📣 *Broadcast*\n\nSend the message to broadcast to all users.\n\nUse /cancel to abort.', { parse_mode: 'Markdown' });
   });
 
+
+  bot.action('settings:broadcast:send', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const session = await getAdminSession(ctx.from!.id);
+    const message = session?.action === 'broadcast' && session.step === 'awaiting_confirmation'
+      ? String(session.payload?.message || '')
+      : '';
+    if (!message) return ctx.answerCbQuery('Broadcast preview expired. Start again.', { show_alert: true });
+    await ctx.answerCbQuery('Broadcast started…');
+    await clearAdminSession(ctx.from!.id);
+    try {
+      const userIds = await getBroadcastUserIds();
+      let sent = 0, failed = 0;
+      for (let i = 0; i < userIds.length; i += 25) {
+        const batch = userIds.slice(i, i + 25);
+        await Promise.all(batch.map(async (userId) => {
+          try {
+            await withTelegramRetry(() => bot.telegram.sendMessage(userId, message), { label: 'broadcast:' + userId });
+            sent++;
+          } catch (error) {
+            failed++;
+            if (classifyTelegramError(error).kind === 'blocked') {
+              try { await setUserBlocked(userId, true); } catch { /* keep broadcast running */ }
+            }
+          }
+        }));
+        if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
+      }
+      return ctx.editMessageText('📣 <b>Broadcast finished</b>\\n\\n👥 Recipients: <b>' + userIds.length + '</b>\\n✅ Sent: <b>' + sent + '</b>\\n❌ Failed: <b>' + failed + '</b>', {
+        parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
+      });
+    } catch (err) {
+      console.error('[Broadcast] Failed:', err);
+      return ctx.editMessageText('❌ Broadcast failed while loading recipients. No further messages were sent.', {
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Admin Center', 'settings:main')]]),
+      });
+    }
+  });
+
+  bot.action('settings:broadcast:cancel', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await clearAdminSession(ctx.from!.id);
+    await ctx.answerCbQuery('Broadcast cancelled.');
+    return showAdminSettings(ctx);
+  });
+
   bot.action('settings:forcesub', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
@@ -1862,19 +1908,15 @@ bot.command('start', async (ctx) => {
     if (session.action === 'broadcast' && session.step === 'awaiting_message' && 'text' in ctx.message) {
       const message = ctx.message.text.trim();
       if (!message) return ctx.reply('Send a non-empty message or /cancel.');
-      if (message.length > 4096) return ctx.reply('Message exceeds Telegram 4096-character limit.');
-      await clearAdminSession(ctx.from.id);
-      const userIds = await getBroadcastUserIds();
-      let sent = 0, failed = 0;
-      for (let i = 0; i < userIds.length; i += 25) {
-        const batch = userIds.slice(i, i + 25);
-        await Promise.all(batch.map(async userId => {
-          try { await withTelegramRetry(() => bot.telegram.sendMessage(userId, message), { label: 'broadcast:' + userId }); sent++; }
-          catch (error) { failed++; if (classifyTelegramError(error).kind === 'blocked') { try { await setUserBlocked(userId, true); } catch {} } }
-        }));
-        if (i + 25 < userIds.length) await new Promise(resolve => setTimeout(resolve, 1100));
-      }
-      return ctx.reply('📣 Broadcast finished.\n\n✅ Sent: ' + sent + '\n❌ Failed: ' + failed);
+      if (message.length > 3500) return ctx.reply('Message is too long for a safe preview. Please keep it under 3500 characters or /cancel.');
+      await setAdminSession(ctx.from.id, 'broadcast', 'awaiting_confirmation', { message });
+      return ctx.reply(
+        '📣 <b>Broadcast Preview</b>\\n\\n' + message + '\\n\\n⚠️ This will be sent to all active users. Continue?',
+        { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+          [Markup.button.callback('✅ Send Broadcast', 'settings:broadcast:send')],
+          [Markup.button.callback('❌ Cancel', 'settings:broadcast:cancel')],
+        ]) },
+      );
     }
 
     if (session.action === 'force_sub_add' && session.step === 'awaiting_channel' && 'text' in ctx.message) {
