@@ -106,9 +106,10 @@ bot.command('start', async (ctx) => {
       parse_mode: 'HTML',
       ...Markup.inlineKeyboard([
         [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
-        [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
+        [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium Plans', 'premium:store')],
+        [Markup.button.callback('🎟️ Redeem Promo', 'user:promo')],
         [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
-        [Markup.button.callback('❓ Help', 'menu:help')],
+        [Markup.button.callback('❓ Help & Support', 'menu:help')],
         [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
       ]),
     });
@@ -168,9 +169,10 @@ bot.command('start', async (ctx) => {
     ].join('\n');
     const keyboard = Markup.inlineKeyboard([
       [Markup.button.callback('🔎 Search Catalog', 'menu:search')],
-      [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
+      [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium Plans', 'premium:store')],
+      [Markup.button.callback('🎟️ Redeem Promo', 'user:promo')],
       [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
-      [Markup.button.callback('❓ Help', 'menu:help')],
+      [Markup.button.callback('❓ Help & Support', 'menu:help')],
       [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
     ]);
     return ctx.editMessageText(welcome, { parse_mode: 'HTML', ...keyboard }).catch(() =>
@@ -1338,6 +1340,66 @@ bot.command('start', async (ctx) => {
     await ctx.answerCbQuery();
     const enabled = await getSetting<boolean>('force_sub_enabled', false);
     return showForceSubAdminMenu(ctx);
+  });
+
+  bot.action(/^settings:forcesub:test:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const channels = await getAllForceSubChannels();
+    const channel = channels.find(ch => ch.id === ctx.match[1]);
+    if (!channel) return ctx.answerCbQuery('Channel not found.', { show_alert: true });
+
+    await ctx.answerCbQuery('Testing channel…');
+    try {
+      const me = await bot.telegram.getMe();
+      const chat = await bot.telegram.getChat(channel.channel_id);
+      const member = await bot.telegram.getChatMember(channel.channel_id, me.id);
+      const isAdminInChannel = member.status === 'creator' || member.status === 'administrator';
+      const status = member.status;
+      const title = 'title' in chat ? String(chat.title || channel.title) : channel.title;
+      const inviteState = channel.invite_link ? 'Saved' : 'Missing';
+      const result = [
+        '🧪 <b>Force-sub Channel Test</b>',
+        '',
+        '📢 <b>' + escapeHtml(title) + '</b>',
+        '🆔 <code>' + escapeHtml(channel.channel_id) + '</code>',
+        '',
+        (isAdminInChannel ? '✅' : '❌') + ' Bot admin access: <b>' + (isAdminInChannel ? 'OK' : 'NOT ADMIN') + '</b>',
+        '🤖 Bot status: <b>' + escapeHtml(status) + '</b>',
+        (isAdminInChannel ? '✅' : '⚠️') + ' Membership verification: <b>' + (isAdminInChannel ? 'Ready to test users' : 'May fail until bot is admin') + '</b>',
+        (channel.invite_link ? '✅' : '⚠️') + ' Saved invite link: <b>' + inviteState + '</b>',
+        '🔒 Channel requirement: <b>' + (channel.is_active ? 'Active' : 'Disabled') + '</b>',
+        '📨 Join-request mode: <b>' + (channel.request_mode ? 'ON' : 'OFF') + '</b>',
+        '',
+        isAdminInChannel
+          ? 'The bot can access this channel. Membership checks should work when the bot has the required channel permissions.'
+          : 'Add the bot as a channel administrator, then run this test again.',
+      ].join('\\n');
+      return ctx.editMessageText(result, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([
+          [Markup.button.callback('🔄 Test Again', 'settings:forcesub:test:' + channel.id)],
+          [Markup.button.callback('⬅️ Force-sub Settings', 'settings:forcesub')],
+        ]),
+      });
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err);
+      const message = [
+        '🧪 <b>Force-sub Channel Test</b>',
+        '',
+        '📢 <b>' + escapeHtml(channel.title) + '</b>',
+        '🆔 <code>' + escapeHtml(channel.channel_id) + '</code>',
+        '',
+        '❌ Could not access or inspect this channel.',
+        '',
+        '<b>Telegram error:</b> ' + escapeHtml(detail.slice(0, 500)),
+        '',
+        'Check the channel ID and ensure the bot is added to the channel as an administrator.',
+      ].join('\\n');
+      return ctx.editMessageText(message, {
+        parse_mode: 'HTML',
+        ...Markup.inlineKeyboard([[Markup.button.callback('🔄 Test Again', 'settings:forcesub:test:' + channel.id)], [Markup.button.callback('⬅️ Force-sub Settings', 'settings:forcesub')]]),
+      });
+    }
   });
 
   bot.action('settings:forcesub:add', async (ctx) => {
