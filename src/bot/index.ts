@@ -1388,11 +1388,30 @@ bot.command('start', async (ctx) => {
     }
   });
 
+  bot.action(/^settings:forcesub:confirm-delete:(.+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const channels = await getAllForceSubChannels();
+    const channel = channels.find(ch => ch.id === ctx.match[1]);
+    if (!channel) return ctx.answerCbQuery('Channel not found.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return ctx.editMessageText(
+      '⚠️ <b>Delete force-sub channel?</b>\n\n📢 <b>' + escapeHtml(channel.title) + '</b>\n🆔 <code>' + escapeHtml(channel.channel_id) + '</code>\n\nThis removes it from the subscription requirements. This action cannot be undone.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([
+        [Markup.button.callback('🗑️ Yes, delete channel', 'settings:forcesub:delete:' + channel.id)],
+        [Markup.button.callback('↩️ Cancel', 'settings:forcesub')],
+      ]) },
+    );
+  });
+
   bot.action(/^settings:forcesub:delete:(.+)$/, async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
-    await deleteForceSubChannel(ctx.match[1]);
-    await ctx.answerCbQuery('Deleted.');
-    return showForceSubAdminMenu(ctx);
+    try {
+      await deleteForceSubChannel(ctx.match[1]);
+      await ctx.answerCbQuery('Channel deleted.');
+      return showForceSubAdminMenu(ctx);
+    } catch {
+      return ctx.answerCbQuery('Could not delete channel.', { show_alert: true });
+    }
   });
 
   bot.action('settings:forcesub:toggle', async (ctx) => {
