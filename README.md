@@ -24,6 +24,11 @@ ADMIN_API_KEY=
 DUMP_CHAT_ID=
 ADMIN_IDS=
 PORT=3000
+
+# Recommended on Render: set both to enable Telegram webhook mode
+WEBHOOK_URL=https://piratecultjav.onrender.com
+WEBHOOK_SECRET=generate-a-strong-random-secret
+WEBHOOK_PATH=/telegram-webhook
 ```
 
 Keep `.env` out of version control. Never expose bot tokens or the Supabase secret key in browser code.
@@ -122,5 +127,6 @@ sudo systemctl restart telegram-bot-service
 - Keep secrets in environment variables.
 - Use HTTPS when exposing the service publicly.
 - Keep Node.js and dependencies updated.
-- Ensure only one active polling process uses a given Telegram bot token.
+- On Render, configure `WEBHOOK_URL`, `WEBHOOK_SECRET`, and optionally `WEBHOOK_PATH` to enable Telegram webhook mode. The webhook endpoint defaults to `/telegram-webhook`.
+- If webhook variables are absent, the service retains polling mode for local/development compatibility. Do not run polling and webhook mode simultaneously for the same bot token.
 - Monitor the readiness endpoint and application logs after deployment.
