@@ -561,12 +561,21 @@ bot.command('start', async (ctx) => {
     try {
       const q = await getDownloadQuotaSettings();
       return ctx.reply(
-        '📥 <b>Download Quotas</b>\n\n' +
-        `🆓 Free: <b>${q.free}/day</b>\n` +
-        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
-        '💎 Premium: <b>Unlimited</b>\n\n' +
-        'Change with <code>/setquota FREE SEMI_PREMIUM</code>.',
-        { parse_mode: 'HTML' },
+        '📥 <b>Daily Download Quotas</b>\\n\\n' +
+        `🆓 Free: <b>${q.free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
+        '💎 Premium: <b>Unlimited</b>\\n\\n' +
+        'Tap a preset to update both limits instantly, or use the custom command below.',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🟢 Default · 20 / 40', 'admin:quota:set:20:40')],
+            [Markup.button.callback('⚡ Balanced · 50 / 100', 'admin:quota:set:50:100')],
+            [Markup.button.callback('🚀 High · 100 / 200', 'admin:quota:set:100:200')],
+            [Markup.button.callback('✏️ Custom Limits', 'admin:quota:custom')],
+            [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+          ]),
+        },
       );
     } catch {
       return ctx.reply('❌ Could not load download quotas.');
@@ -819,14 +828,68 @@ bot.command('start', async (ctx) => {
   bot.action('admin:quota', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
     await ctx.answerCbQuery();
-    const q = await getDownloadQuotaSettings();
-    return ctx.editMessageText(
-      '📥 <b>Download Quotas</b>\n\n' +
-      `🆓 Free: <b>${q.free}/day</b>\n` +
-      `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\n` +
-      '💎 Premium: <b>Unlimited</b>\n\n' +
-      'Use <code>/setquota FREE SEMI_PREMIUM</code> to change the limits.',
-      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]) },
+    try {
+      const q = await getDownloadQuotaSettings();
+      return ctx.editMessageText(
+        '📥 <b>Daily Download Quotas</b>\\n\\n' +
+        `🆓 Free: <b>${q.free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${q.semi_premium}/day</b>\\n` +
+        '💎 Premium: <b>Unlimited</b>\\n\\n' +
+        'Tap a preset to update both limits instantly, or choose Custom Limits.',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🟢 Default · 20 / 40', 'admin:quota:set:20:40')],
+            [Markup.button.callback('⚡ Balanced · 50 / 100', 'admin:quota:set:50:100')],
+            [Markup.button.callback('🚀 High · 100 / 200', 'admin:quota:set:100:200')],
+            [Markup.button.callback('✏️ Custom Limits', 'admin:quota:custom')],
+            [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+          ]),
+        },
+      );
+    } catch {
+      return ctx.editMessageText('❌ Could not load download quotas.', {
+        ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Back', 'settings:main')]]),
+      });
+    }
+  });
+
+  bot.action(/^admin:quota:set:(\\d+):(\\d+)$/, async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    const free = Number(ctx.match[1]);
+    const semiPremium = Number(ctx.match[2]);
+    await ctx.answerCbQuery('Saving quota limits…');
+    try {
+      await setDownloadQuotaSettings({ free, semi_premium: semiPremium });
+      return ctx.editMessageText(
+        '✅ <b>Download quotas saved</b>\\n\\n' +
+        `🆓 Free: <b>${free}/day</b>\\n` +
+        `⚡ Semi Premium: <b>${semiPremium}/day</b>\\n` +
+        '💎 Premium: <b>Unlimited</b>',
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback('🔄 Change Quotas', 'admin:quota')],
+            [Markup.button.callback('⬅️ Admin Center', 'settings:main')],
+          ]),
+        },
+      );
+    } catch (err) {
+      console.error('[Quota] Preset update failed:', err);
+      return ctx.reply('❌ Failed to save download quotas.');
+    }
+  });
+
+  bot.action('admin:quota:custom', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Unauthorized.');
+    await ctx.answerCbQuery();
+    return ctx.reply(
+      '✏️ <b>Custom Daily Quotas</b>\\n\\n' +
+      'Send this command with your preferred limits:\\n' +
+      '<code>/setquota FREE SEMI_PREMIUM</code>\\n\\n' +
+      'Example: <code>/setquota 30 75</code>\\n' +
+      'Use <code>0</code> to disable daily downloads for a plan. Premium stays unlimited.',
+      { parse_mode: 'HTML', ...Markup.inlineKeyboard([[Markup.button.callback('⬅️ Quotas', 'admin:quota')]]) },
     );
   });
 
