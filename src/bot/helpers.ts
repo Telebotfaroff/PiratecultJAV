@@ -198,43 +198,41 @@ async function showAdminVideoEditMenu(ctx: any, videoId: string) {
 async function sendReferralLeaderboard(ctx: any) {
   if (!ctx.from) return;
 
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
+    [Markup.button.callback('⬅️ My Dashboard', 'user:plan')],
+  ]);
+  const show = async (text: string) => {
+    if (ctx.callbackQuery) {
+      try {
+        return await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+      } catch (err) {
+        // Telegram returns "message is not modified" when the screen is already current.
+        if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+        return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+      }
+    }
+    return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+  };
+
   try {
     const entries = await getReferralLeaderboard(10);
     if (!entries.length) {
-      return ctx.reply(
-        '🏆 <b>Referral Leaderboard</b>\n\nNo completed referrals yet. Be the first to invite someone!',
-        {
-          parse_mode: 'HTML',
-          ...Markup.inlineKeyboard([[Markup.button.callback('🔗 Refer & Earn', 'user:referral')], [Markup.button.callback('⬅️ My Dashboard', 'user:plan')]]),
-        },
-      );
+      return show('🏆 <b>Referral Leaderboard</b>\n\nNo completed referrals yet. Be the first to invite someone!');
     }
 
     const lines = ['🏆 <b>Referral Leaderboard</b>', '', '<i>Ranked by completed referrals</i>', ''];
     entries.forEach((entry, index) => {
       const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : `<b>#${index + 1}</b>`;
-      lines.push(
-        `${medal} <b>${escapeHtml(entry.display_name)}</b> — <b>${entry.completed_referrals}</b> completed / ${entry.total_referrals} invited`,
-      );
+      lines.push(`${medal} <b>${escapeHtml(entry.display_name)}</b> — <b>${entry.completed_referrals}</b> completed / ${entry.total_referrals} invited`);
     });
 
     const mine = entries.findIndex(entry => entry.telegram_user_id === ctx.from.id);
-    if (mine >= 0) {
-      lines.push('', `📍 <b>Your rank:</b> #${mine + 1}`);
-    } else {
-      lines.push('', '📍 <b>Your rank:</b> outside the top 10');
-    }
-
-    return ctx.reply(lines.join('\n'), {
-      parse_mode: 'HTML',
-      ...Markup.inlineKeyboard([
-        [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
-        [Markup.button.callback('⬅️ My Dashboard', 'user:plan')],
-      ]),
-    });
+    lines.push('', mine >= 0 ? `📍 <b>Your rank:</b> #${mine + 1}` : '📍 <b>Your rank:</b> outside the top 10');
+    return show(lines.join('\n'));
   } catch (err) {
     console.error('[Referral] Leaderboard failed:', err);
-    return ctx.reply('⚠️ Could not load the referral leaderboard. Please try again later.');
+    return show('⚠️ Could not load the referral leaderboard. Please try again later.');
   }
 }
 
@@ -276,15 +274,21 @@ async function sendUserPlan(ctx: any) {
     '<i>A referral becomes completed only after the invited user successfully receives their first video.</i>',
   ].filter(Boolean).join('\n');
 
-  return ctx.reply(text, {
-    parse_mode: 'HTML',
-    ...Markup.inlineKeyboard([
-      [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
-      [Markup.button.callback('🎟️ Promo Code', 'user:promo')],
-      [Markup.button.callback('💎 Buy Premium', 'premium:store'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
-      [Markup.button.callback('🔄 Refresh', 'user:plan')],
-    ]),
-  });
+  const keyboard = Markup.inlineKeyboard([
+    [Markup.button.callback('🔗 Refer & Earn', 'user:referral')],
+    [Markup.button.callback('🎟️ Promo Code', 'user:promo')],
+    [Markup.button.callback('💎 Buy Premium', 'premium:store'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
+    [Markup.button.callback('🔄 Refresh', 'user:plan')],
+  ]);
+  if (ctx.callbackQuery) {
+    try {
+      return await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    } catch (err) {
+      if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    }
+  }
+  return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 }
 
 async function sendReferralInfo(bot: Telegraf, ctx: any) {
@@ -293,10 +297,17 @@ async function sendReferralInfo(bot: Telegraf, ctx: any) {
   const username = me.username;
   if (!username) return ctx.reply('⚠️ Referral link is temporarily unavailable.');
   const link = `https://t.me/${username}?start=ref_${ctx.from.id}`;
-  return ctx.reply(
-    `🔗 <b>Refer & Earn</b>\n\nInvite a new user with your personal link. After the new user passes required membership checks and successfully receives their first video, you receive <b>1 day of unlimited video access</b>.\n\n🎬 Free: 20 videos/day\n⚡ Semi Premium: 40 videos/day\n💎 Premium: Unlimited\n\n<b>Your referral link:</b>\n<code>${escapeHtml(link)}</code>`,
-    { parse_mode: 'HTML' }
-  );
+  const text = `🔗 <b>Refer & Earn</b>\n\nInvite a new user with your personal link. After the new user passes required membership checks and successfully receives their first video, you receive <b>1 day of unlimited video access</b>.\n\n🎬 Free: 20 videos/day\n⚡ Semi Premium: 40 videos/day\n💎 Premium: Unlimited\n\n<b>Your referral link:</b>\n<code>${escapeHtml(link)}</code>`;
+  const keyboard = Markup.inlineKeyboard([[Markup.button.callback('⬅️ My Dashboard', 'user:plan')]]);
+  if (ctx.callbackQuery) {
+    try {
+      return await ctx.editMessageText(text, { parse_mode: 'HTML', ...keyboard });
+    } catch (err) {
+      if (err instanceof Error && /message is not modified/i.test(err.message)) return;
+      return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
+    }
+  }
+  return ctx.reply(text, { parse_mode: 'HTML', ...keyboard });
 }
 
 function escapeHtml(value: unknown): string {
