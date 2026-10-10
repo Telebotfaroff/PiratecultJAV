@@ -436,6 +436,12 @@ bot.command('start', async (ctx) => {
     });
   });
 
+  bot.action('admin:missedcodes', async (ctx) => {
+    if (!isAdmin(ctx.from?.id)) return ctx.answerCbQuery('Admin access required.', { show_alert: true });
+    await ctx.answerCbQuery();
+    return showMissedCodes(ctx, 1, true);
+  });
+
   bot.command('missedcodes', async (ctx) => {
     if (!isAdmin(ctx.from?.id)) return ctx.reply('Unauthorized: Admin access required.');
     const requestedPage = Number(ctx.message.text.trim().split(/\s+/)[1] || '1');
@@ -2385,7 +2391,7 @@ bot.command('start', async (ctx) => {
     const hasMedia = 'video' in post || 'document' in post || 'animation' in post;
     if (!hasMedia) return;
 
-    const caption = ('caption' in post ? post.caption : ('text' in post ? post.text : '')) || '';
+    const caption = String(('caption' in post ? post.caption : ('text' in post ? post.text : '')) || '');
     if (!caption.trim()) {
       console.warn(`[DumpPost] Ignored media message #${post.message_id} in ${chatId}: caption is empty, so no video code can be detected.`);
       return;
