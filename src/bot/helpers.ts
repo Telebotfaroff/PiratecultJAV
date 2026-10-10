@@ -10,7 +10,7 @@ import { sendDumpVideoToUser } from '../services/dump.ts';
 import { recordVideoDeliveryEvent, getVideoDeliveryAnalytics } from '../services/videoAnalytics.ts';
 import { getActiveBotRole } from './state.ts';
 
-async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, source: 'deep_link' | 'search' | 'callback' | 'unknown' = 'unknown') {
+async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, source: 'deep_link' | 'search' | 'callback' | 'unknown' = 'unknown', options: { suppressDeleteReminderMessage?: boolean } = {}) {
   let quotaConsumed = false;
   try {
     await recordVideoDeliveryEvent({ eventType: 'attempt', telegramUserId: ctx.from?.id, source });
@@ -95,7 +95,7 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
       ? `\n\n⏳ Auto-deletes in ${formatAutoDeleteDuration(deleteAfterSeconds)} — please forward it now to keep it.`
       : '';
 
-    if (deleteAfterSeconds > 0) {
+    if (deleteAfterSeconds > 0 && !options.suppressDeleteReminderMessage) {
       try {
         await ctx.reply(
           `⏳ <b>Auto-delete reminder</b>\n\nThis video will be automatically deleted in <b>${formatAutoDeleteDuration(deleteAfterSeconds)}</b>. Please forward it to Saved Messages or another chat now if you want to keep it.`,
@@ -372,6 +372,11 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
     html += `─────────────────────────\n`;
     html += `👇 <i>Tap a button below to get the video directly:</i>`;
 
+    // Bulk delivery applies to every match for this query, not only the visible page.
+    keyboardButtons.push([
+      Markup.button.callback(`⬇️ Download All (${total})`, 'downloadall:confirm'),
+    ]);
+
     // Pagination row
     const navRow: any[] = [];
     if (page > 0) {
@@ -407,6 +412,94 @@ async function handleSearchQuery(ctx: any, rawQuery: string, page = 0) {
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     return ctx.reply(`⚠️ Search error: ${errMsg}`);
+  }
+}
+
+async function downloadAllSearchResults(bot: Telegraf, ctx: any, rawQuery: string) {
+  const query = String(rawQuery || '').trim();
+  if (!ctx.from || !query) return ctx.reply('⚠️ I could not identify the search query. Please search again.');
+
+  try {
+    const videos: any[] = [];
+    let total = 0;
+    let offset = 0;
+    do {
+      const result = await searchVideos(query, 100, offset);
+      total = result.total;
+      videos.push(...result.videos);
+      offset += result.videos.length;
+      if (result.videos.length === 0) break;
+    } while (offset < total);
+
+    if (!videos.length) {
+      return ctx.reply('❌ No available videos were found for <b>' + escapeHtml(query) + '</b>.', { parse_mode: 'HTML' });
+    }
+
+    if (!isAdmin(ctx.from.id)) {
+      const forceSub = await checkUserForceSub(bot, ctx.from.id);
+      if (!forceSub.passed) {
+        const rows = forceSub.missingChannels.map(ch => [
+          Markup.button.url(
+            ch.request_mode ? '📨 Request to Join ' + ch.title : 'Join ' + ch.title,
+            ch.invite_link || 'https://t.me/' + ch.channel_id.replace('@', ''),
+          ),
+        ]);
+        return ctx.reply(
+          '🔒 <b>Join the required channel(s) first</b>\n\nThen run the search again and tap Download All.',
+          { parse_mode: 'HTML', ...Markup.inlineKeyboard(rows) },
+        );
+      }
+    }
+
+    let processed = 0;
+    let skippedForQuota = false;
+    for (let index = 0; index < videos.length; index++) {
+      if (!isAdmin(ctx.from.id)) {
+        const dashboard = await getUserDashboard(ctx.from.id);
+        if (!dashboard) {
+          await ctx.reply('⚠️ Could not load your account allowance. Bulk delivery stopped.');
+          break;
+        }
+        if (!dashboard.is_unlimited && dashboard.daily_remaining <= 0) {
+          skippedForQuota = true;
+          break;
+        }
+      }
+
+      await deliverVideoToUser(bot, ctx, String(videos[index].id), 'search', {
+        suppressDeleteReminderMessage: true,
+      });
+      processed++;
+
+      // Avoid flooding the same Telegram chat; deliver one result at a time.
+      if (index < videos.length - 1) {
+        await new Promise(resolve => setTimeout(resolve, 1100));
+      }
+    }
+
+    const summary = [
+      '✅ <b>Download All run finished</b>',
+      '',
+      '🔎 Search: <code>' + escapeHtml(query) + '</code>',
+      '📚 Matching videos: <b>' + total + '</b>',
+      '📤 Delivery attempts: <b>' + processed + '</b>',
+      skippedForQuota ? '' : '',
+      skippedForQuota
+        ? '🚫 Stopped because your daily download allowance is used up. Upgrade your plan or try again tomorrow.'
+        : processed < total
+          ? 'ℹ️ Processing stopped before all matches were attempted. Please try again if needed.'
+          : '🎉 All matching results were processed.',
+    ].filter(Boolean).join('\n');
+    return ctx.reply(summary, {
+      parse_mode: 'HTML',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('📊 My Account', 'user:plan')],
+        [Markup.button.callback('🔎 Search Again', 'menu:search')],
+      ]),
+    });
+  } catch (err) {
+    console.error('[BulkDownload] Failed:', err);
+    return ctx.reply('⚠️ Bulk delivery failed while processing this search. Please try again.');
   }
 }
 
