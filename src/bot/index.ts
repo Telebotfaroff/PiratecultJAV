@@ -1914,7 +1914,7 @@ bot.command('start', async (ctx) => {
 
   bot.action('downloadall:run', async (ctx) => {
     if (!ctx.from) return ctx.answerCbQuery();
-    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && 'text' in ctx.callbackQuery.message
+    const messageText = ctx.callbackQuery && 'message' in ctx.callbackQuery && !!ctx.callbackQuery.message && 'text' in ctx.callbackQuery.message
       ? ctx.callbackQuery.message.text
       : '';
     const match = messageText.match(/Search:\s*([^\n]+)/i);
