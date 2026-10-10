@@ -109,6 +109,7 @@ bot.command('start', async (ctx) => {
         [Markup.button.callback('📊 My Account', 'user:plan'), Markup.button.callback('💎 Premium', 'premium:store')],
         [Markup.button.callback('🔗 Refer & Earn', 'user:referral'), Markup.button.callback('🏆 Leaderboard', 'user:leaderboard')],
         [Markup.button.callback('❓ Help', 'menu:help')],
+        [Markup.button.url('🌐 Open Website', 'https://piratecultjav.onrender.com/')],
       ]),
     });
   });
