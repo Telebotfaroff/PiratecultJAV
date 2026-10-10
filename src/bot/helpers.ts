@@ -171,6 +171,27 @@ async function deliverVideoToUser(bot: Telegraf, ctx: any, identifier: string, s
         console.warn('[Referral] Completion failed:', err instanceof Error ? err.message : String(err));
       }
     }
+
+    // A playful referral nudge appears only after the video was delivered successfully.
+    if (ctx.from && !isAdmin(ctx.from.id)) {
+      try {
+        await ctx.reply(
+          '😏 <b>Enjoying the goods?</b>\\n\\n' +
+          'Don’t be selfish, you little troublemaker. 😈 Bring a partner-in-crime into the fun!\\n\\n' +
+          '🎁 If your friend joins through your referral link and successfully gets their first video, you earn <b>+1 day of unlimited access</b>.\\n\\n' +
+          '<i>Good friends share links. Best friends share the blame. 😂</i>',
+          {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback('😈 Recruit a Partner-in-Crime', 'user:referral')],
+              [Markup.button.callback('🙈 Maybe Later', 'referral:dismiss')],
+            ]),
+          },
+        );
+      } catch (err) {
+        console.warn('[Referral] Could not show post-delivery prompt:', err instanceof Error ? err.message : String(err));
+      }
+    }
   } catch (err: unknown) {
     const errMsg = err instanceof Error ? err.message : String(err);
     console.error(`[TelegramBot] Failed direct video delivery for ${identifier}:`, errMsg);
