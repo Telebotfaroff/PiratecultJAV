@@ -729,8 +729,14 @@ bot.command('start', async (ctx) => {
         isActive: true,
       });
       return ctx.reply(
-        `✅ <b>Force-sub channel added</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
-        { parse_mode: 'HTML' },
+        `✅ <b>Force-sub channel added</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>\n\nYou can change request mode below.`,
+        {
+          parse_mode: 'HTML',
+          ...Markup.inlineKeyboard([
+            [Markup.button.callback(channel.request_mode ? '📨 Turn Request Mode OFF' : '📨 Turn Request Mode ON', `settings:forcesub:request:${channel.id}`)],
+            [Markup.button.callback('⬅️ Force-sub Settings', 'settings:forcesub')],
+          ]),
+        },
       );
     } catch (err: unknown) {
       return ctx.reply('❌ Could not add channel. Make sure the bot is an administrator and can create invite links.\n\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
@@ -1917,8 +1923,14 @@ bot.command('start', async (ctx) => {
         });
         await clearAdminSession(ctx.from.id);
         return ctx.reply(
-          `✅ <b>Force-sub channel saved</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>`,
-          { parse_mode: 'HTML' },
+          `✅ <b>Force-sub channel saved</b>\n\n📢 <b>${escapeHtml(channel.title)}</b>\n🆔 <code>${escapeHtml(channel.channel_id)}</code>\n🔗 <code>${escapeHtml(channel.invite_link || '')}</code>\n📨 Request mode: <b>${channel.request_mode ? 'ON' : 'OFF'}</b>\n\nYou can change request mode below.`,
+          {
+            parse_mode: 'HTML',
+            ...Markup.inlineKeyboard([
+              [Markup.button.callback(channel.request_mode ? '📨 Turn Request Mode OFF' : '📨 Turn Request Mode ON', `settings:forcesub:request:${channel.id}`)],
+              [Markup.button.callback('⬅️ Force-sub Settings', 'settings:forcesub')],
+            ]),
+          },
         );
       } catch (err: unknown) {
         return ctx.reply('❌ Could not configure channel. Make sure the bot is an administrator with permission to create invite links.\n\n' + escapeHtml(err instanceof Error ? err.message : String(err)), { parse_mode: 'HTML' });
