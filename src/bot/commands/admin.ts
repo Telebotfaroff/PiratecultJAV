@@ -11,7 +11,7 @@ const {
   getAdminSession, setAdminSession, clearAdminSession, javtifulProvider, sendDumpVideoToUser, storeThumbnailInDumpChannel,
   installMessageDeleteTimer, getSetting, setSetting, classifyTelegramError, withTelegramRetry, recordVideoDeliveryEvent, getVideoDeliveryAnalytics,
   deliverVideoToUser, showAdminVideoEditMenu, sendReferralLeaderboard, sendUserPlan, sendReferralInfo, escapeHtml, handleSearchQuery,
-  showForceSubAdminMenu, showAdminSettings, formatTimer, PREMIUM_PACKAGES, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice,
+  showForceSubAdminMenu, showAdminSettings, formatTimer, parsePremiumPayload, sendPremiumStore, sendPremiumInvoice,
 } = botDeps;
 
 export function registerAdminCommands(bot: Telegraf) {
