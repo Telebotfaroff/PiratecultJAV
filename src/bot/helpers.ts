@@ -18,7 +18,7 @@ async function notifyNotFound(ctx: any, query: string, source: string): Promise<
     const user = ctx.from;
     const safe = (value: unknown) => escapeHtml(value ?? '—');
     const requestId = randomBytes(6).toString('hex');
-    const pending = await getSetting<any[]>('pending_not_found_notifications', []);
+    const pending = await getSetting<any[]>('not_found_alerts', []);
     const requests = Array.isArray(pending) ? pending : [];
     requests.push({
       id: requestId,
@@ -29,7 +29,7 @@ async function notifyNotFound(ctx: any, query: string, source: string): Promise<
       username: user?.username || null,
       firstName: user?.first_name || null,
     });
-    await setSetting('pending_not_found_notifications', requests.slice(-500));
+    await setSetting('not_found_alerts', requests.slice(-500));
 
     await ctx.telegram.sendMessage(
       channel,
